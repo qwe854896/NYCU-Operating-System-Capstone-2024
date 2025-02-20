@@ -1,41 +1,16 @@
-ARCH = aarch64
-MODEL = raspi3b
 GDB = pwndbg
-
-CROSS_COMPILE ?= $(ARCH)-linux-gnu-
-CC = $(CROSS_COMPILE)gcc
-LD = $(CROSS_COMPILE)ld
-OBJCOPY = $(CROSS_COMPILE)objcopy
-QEMU = qemu-system-$(ARCH)
-ZIG = zig
-
-TARGET = kernel8
-ZIG_SOURCES = main.zig
-LD_SCRIPT = linker.ld
-
-OBJECTS = $(ZIG_SOURCES:.zig=.o)
+TARGET = zig-out/bin/kernel8
 
 .PHONY: all clean run debug flash
 
-all: $(TARGET).img
+all:
+	zig build
 
-%.o: %.S
-	$(CC) -g -c $< -o $@
+run:
+	zig build run
 
-%.o: %.zig
-	$(ZIG) build-obj -target aarch64-freestanding-eabihf -mcpu=cortex_a53 $<
-
-$(TARGET).elf: $(OBJECTS)
-	$(LD) -T $(LD_SCRIPT) -o $@ $^
-
-$(TARGET).img: $(TARGET).elf
-	$(OBJCOPY) -O binary $< $@
-
-run: $(TARGET).img
-	$(QEMU) -M $(MODEL) -kernel $(TARGET).img -display none -serial null -serial stdio
-
-debug: $(TARGET).img
-	$(QEMU) -M $(MODEL) -kernel $(TARGET).img -display none -serial null -serial stdio -S -s & echo $$! > qemu.pid
+debug:
+	zig build debug & echo $$! > qemu.pid
 	$(GDB) -ex "file $(TARGET).elf" -ex "target remote :1234"
 
 flash:
@@ -43,5 +18,5 @@ flash:
 	sudo dd if=$(TARGET).img of=/dev/sdX bs=4M status=progress conv=fsync
 
 clean:
-	rm -f $(OBJECTS) $(TARGET).elf $(TARGET).img qemu.pid main.o.o
+	rm -rf qemu.pid .zig-cache zig-out
 
