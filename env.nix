@@ -4,6 +4,7 @@
   clang-tools,
   qemu,
   pwndbg,
+  zig,
 }:
 
 mkShell {
@@ -12,6 +13,7 @@ mkShell {
     clang-tools
     qemu
     pwndbg.packages.x86_64-linux.default
+    zig.packages.x86_64-linux.default
   ];
   hardeningDisable = [ "all" ];
 }
