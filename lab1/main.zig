@@ -72,7 +72,7 @@ fn uart_init() void {
 }
 
 // Send a byte over UART
-export fn uart_send(byte: u8) void {
+fn uart_send(byte: u8) void {
     const AUX_MU_LSR_REG = Register.init(UART_BASE + 0x54);
     const AUX_MU_IO_REG = Register.init(UART_BASE + 0x40);
 
@@ -84,7 +84,7 @@ export fn uart_send(byte: u8) void {
 }
 
 // Receive a byte over UART
-export fn uart_recv() u8 {
+fn uart_recv() u8 {
     const AUX_MU_LSR_REG = Register.init(UART_BASE + 0x54);
     const AUX_MU_IO_REG = Register.init(UART_BASE + 0x40);
 
