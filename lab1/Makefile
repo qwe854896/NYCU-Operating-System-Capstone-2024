@@ -1,6 +1,6 @@
 ARCH = aarch64
 MODEL = raspi3b
-GDB = gef
+GDB = pwndbg
 
 CROSS_COMPILE ?= $(ARCH)-linux-gnu-
 CC = $(CROSS_COMPILE)gcc

@@ -3,7 +3,7 @@
   mkShell,
   clang-tools,
   qemu,
-  gef,
+  pwndbg,
 }:
 
 mkShell {
@@ -11,7 +11,7 @@ mkShell {
   depsBuildBuild = [
     clang-tools
     qemu
-    gef
+    pwndbg.packages.x86_64-linux.default
   ];
   hardeningDisable = [ "all" ];
 }
