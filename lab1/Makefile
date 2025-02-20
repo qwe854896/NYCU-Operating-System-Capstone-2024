@@ -28,10 +28,10 @@ $(TARGET).img: $(TARGET).elf
 	$(OBJCOPY) -O binary $< $@
 
 run: $(TARGET).img
-	$(QEMU) -M $(MODEL) -kernel $(TARGET).img -display none -d in_asm
+	$(QEMU) -M $(MODEL) -kernel $(TARGET).img -display none -serial null -serial stdio
 
 debug: $(TARGET).img
-	$(QEMU) -M $(MODEL) -kernel $(TARGET).img -display none -S -s & echo $$! > qemu.pid
+	$(QEMU) -M $(MODEL) -kernel $(TARGET).img -display none -serial null -serial stdio -S -s & echo $$! > qemu.pid
 	$(GDB) -ex "file $(TARGET).elf" -ex "target remote :1234"
 
 flash:
