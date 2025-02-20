@@ -95,6 +95,26 @@ export fn uart_recv() u8 {
     return @intCast(AUX_MU_IO_REG.read_raw() & 0xFF);
 }
 
+comptime {
+    asm (
+        \\ .section .text.boot
+        \\ .global _start
+        \\ _start:
+        \\      ldr x0, =_stack_top
+        \\      mov sp, x0
+        \\      ldr x1, =_bss_start
+        \\      ldr x2, =_bss_end
+        \\      mov x3, #0
+        \\ 1:
+        \\      cmp x1, x2
+        \\      b.ge 2f
+        \\      str x3, [x1], #8
+        \\      b 1b
+        \\ 2:
+        \\      b main
+    );
+}
+
 // Main function for the kernel
 export fn main() void {
     gpio_init();

@@ -10,11 +10,10 @@ QEMU = qemu-system-$(ARCH)
 ZIG = zig
 
 TARGET = kernel8
-ASM_SOURCES = a.S
 ZIG_SOURCES = main.zig
 LD_SCRIPT = linker.ld
 
-OBJECTS = $(ASM_SOURCES:.S=.o) $(ZIG_SOURCES:.zig=.o)
+OBJECTS = $(ZIG_SOURCES:.zig=.o)
 
 .PHONY: all clean run debug flash
 
