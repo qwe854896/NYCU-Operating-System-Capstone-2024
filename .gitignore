@@ -1,5 +1,6 @@
 .direnv
 .gdb_history
-*.o
 *.elf
 *.img
+qemu.pid
+.zig-cache
