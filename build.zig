@@ -20,13 +20,13 @@ pub fn build(b: *std.Build) !void {
     const kernel_elf_path = b.getInstallPath(.bin, kernel_elf_name);
     const kernel = b.addExecutable(.{
         .name = kernel_elf_name,
-        .root_source_file = b.path("main.zig"),
+        .root_source_file = b.path("src/main.zig"),
         .linkage = .static,
         .link_libc = false,
         .target = target,
         .optimize = optimize,
     });
-    kernel.setLinkerScript(b.path("linker.ld"));
+    kernel.setLinkerScript(b.path("src/linker.ld"));
     b.installArtifact(kernel);
 
     const kernel_img_name = KERNEL_NAME ++ ".img";
