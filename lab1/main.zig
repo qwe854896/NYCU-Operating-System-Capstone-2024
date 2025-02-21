@@ -95,6 +95,33 @@ fn uart_recv() u8 {
     return @intCast(AUX_MU_IO_REG.read_raw() & 0xFF);
 }
 
+fn uart_send_str(str: []const u8) void {
+    for (str) |byte| {
+        switch (byte) {
+            '\n' => {
+                uart_send('\r');
+                uart_send('\n');
+            },
+            else => uart_send(byte),
+        }
+    }
+}
+
+fn uart_recv_str(buffer: []u8) usize {
+    var i: usize = 0;
+    while (i < buffer.len) {
+        const c = uart_recv();
+        if (c == '\r') {
+            uart_send_str("\n");
+            break;
+        }
+        uart_send(c);
+        buffer[i] = c;
+        i += 1;
+    }
+    return i;
+}
+
 comptime {
     asm (
         \\ .section .text.boot
@@ -115,13 +142,65 @@ comptime {
     );
 }
 
+const Command = enum {
+    None,
+    Hello,
+    Help,
+};
+
+fn strcmp(a: []const u8, b: []const u8) bool {
+    if (a.len != b.len) {
+        return false;
+    }
+
+    for (0.., a) |i, a_byte| {
+        if (a_byte != b[i]) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+fn parse_command(command: []const u8) Command {
+    if (strcmp(command, "hello")) {
+        return Command.Hello;
+    } else if (strcmp(command, "help")) {
+        return Command.Help;
+    } else {
+        return Command.None;
+    }
+}
+
+fn simple_shell() void {
+    while (true) {
+        uart_send_str("# ");
+
+        var buffer: [256]u8 = undefined;
+        const recvlen = uart_recv_str(&buffer);
+        const command = parse_command(buffer[0..recvlen]);
+
+        switch (command) {
+            Command.Hello => {
+                uart_send_str("Hello, World!\n");
+            },
+            Command.Help => {
+                uart_send_str("Commands:\n");
+                uart_send_str("  hello - Print 'Hello, World!'\n");
+                uart_send_str("  help - Print this help message\n");
+            },
+            Command.None => {
+                uart_send_str("Unknown command: ");
+                uart_send_str(buffer[0..recvlen]);
+                uart_send_str("\n");
+            },
+        }
+    }
+}
+
 // Main function for the kernel
 export fn main() void {
     gpio_init();
     uart_init();
-
-    while (true) {
-        const received = uart_recv();
-        uart_send(received); // Echo received data
-    }
+    simple_shell();
 }
