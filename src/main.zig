@@ -2,11 +2,13 @@ const std = @import("std");
 const gpio = @import("gpio.zig");
 const uart = @import("uart.zig");
 const mailbox = @import("mailbox.zig");
+const reboot = @import("reboot.zig");
 
 const Command = enum {
     None,
     Hello,
     Help,
+    Reboot,
 };
 
 fn strcmp(a: []const u8, b: []const u8) bool {
@@ -28,6 +30,8 @@ fn parse_command(command: []const u8) Command {
         return Command.Hello;
     } else if (strcmp(command, "help")) {
         return Command.Help;
+    } else if (strcmp(command, "reboot")) {
+        return Command.Reboot;
     } else {
         return Command.None;
     }
@@ -49,11 +53,15 @@ fn simple_shell() void {
                 uart.send_str("Commands:\n");
                 uart.send_str("  hello - Print 'Hello, World!'\n");
                 uart.send_str("  help - Print this help message\n");
+                uart.send_str("  reboot - Reboot the system\n");
             },
             Command.None => {
                 uart.send_str("Unknown command: ");
                 uart.send_str(buffer[0..recvlen]);
                 uart.send_str("\n");
+            },
+            Command.Reboot => {
+                reboot.reset(100);
             },
         }
     }
