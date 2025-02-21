@@ -1,6 +1,7 @@
 const std = @import("std");
 const gpio = @import("gpio.zig");
 const uart = @import("uart.zig");
+const mailbox = @import("mailbox.zig");
 
 const Command = enum {
     None,
@@ -62,6 +63,9 @@ fn simple_shell() void {
 export fn main() void {
     gpio.init();
     uart.init();
+
+    mailbox.get_board_revision();
+    mailbox.get_arm_memory();
 
     simple_shell();
 }
