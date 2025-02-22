@@ -14,6 +14,7 @@ const Command = enum {
     Reboot,
     ListFiles,
     GetFileContent,
+    DemoSimpleAlloc,
 };
 
 fn parse_command(command: []const u8) Command {
@@ -27,16 +28,18 @@ fn parse_command(command: []const u8) Command {
         return Command.ListFiles;
     } else if (utils.strcmp(command, "cat")) {
         return Command.GetFileContent;
+    } else if (utils.strcmp(command, "demo")) {
+        return Command.DemoSimpleAlloc;
     } else {
         return Command.None;
     }
 }
 
 fn simple_shell() void {
+    var buffer = allocator.simple_alloc(256);
     while (true) {
         uart.send_str("# ");
 
-        var buffer = allocator.simple_alloc(256);
         var recvlen = uart.recv_str(buffer);
         const command = parse_command(buffer[0..recvlen]);
 
@@ -51,6 +54,7 @@ fn simple_shell() void {
                 uart.send_str("  reboot - Reboot the system\n");
                 uart.send_str("  ls - List files in the initramfs\n");
                 uart.send_str("  cat - Print the content of a file in the initramfs\n");
+                uart.send_str("  demo - Run a simple allocator demo\n");
             },
             Command.None => {
                 uart.send_str("Unknown command: ");
@@ -67,6 +71,16 @@ fn simple_shell() void {
                 uart.send_str("Filename: ");
                 recvlen = uart.recv_str(buffer);
                 cpio.get_file_content(buffer[0..recvlen]);
+            },
+            Command.DemoSimpleAlloc => {
+                var demo_buffer = allocator.simple_alloc(256);
+                demo_buffer[0] = 'A';
+                demo_buffer[1] = 'B';
+
+                utils.send_hex("Buffer Address: 0x", @intCast(@intFromPtr(demo_buffer.ptr)));
+                uart.send_str("Buffer Content: ");
+                uart.send_str(demo_buffer);
+                uart.send_str("\n");
             },
         }
     }
