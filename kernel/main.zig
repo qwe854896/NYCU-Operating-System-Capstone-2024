@@ -3,12 +3,15 @@ const gpio = @import("gpio.zig");
 const uart = @import("uart.zig");
 const mailbox = @import("mailbox.zig");
 const reboot = @import("reboot.zig");
+const cpio = @import("cpio.zig");
 
 const Command = enum {
     None,
     Hello,
     Help,
     Reboot,
+    ListFiles,
+    GetFileContent,
 };
 
 fn strcmp(a: []const u8, b: []const u8) bool {
@@ -32,6 +35,10 @@ fn parse_command(command: []const u8) Command {
         return Command.Help;
     } else if (strcmp(command, "reboot")) {
         return Command.Reboot;
+    } else if (strcmp(command, "ls")) {
+        return Command.ListFiles;
+    } else if (strcmp(command, "cat")) {
+        return Command.GetFileContent;
     } else {
         return Command.None;
     }
@@ -42,7 +49,7 @@ fn simple_shell() void {
         uart.send_str("# ");
 
         var buffer: [256]u8 = undefined;
-        const recvlen = uart.recv_str(&buffer);
+        var recvlen = uart.recv_str(&buffer);
         const command = parse_command(buffer[0..recvlen]);
 
         switch (command) {
@@ -54,6 +61,8 @@ fn simple_shell() void {
                 uart.send_str("  hello - Print 'Hello, World!'\n");
                 uart.send_str("  help - Print this help message\n");
                 uart.send_str("  reboot - Reboot the system\n");
+                uart.send_str("  ls - List files in the initramfs\n");
+                uart.send_str("  cat - Print the content of a file in the initramfs\n");
             },
             Command.None => {
                 uart.send_str("Unknown command: ");
@@ -62,6 +71,19 @@ fn simple_shell() void {
             },
             Command.Reboot => {
                 reboot.reset(100);
+            },
+            Command.ListFiles => {
+                const initramfs_ptr: [*]const u8 = @ptrFromInt(0x8000000);
+                const initramfs = initramfs_ptr[0..65536];
+                cpio.list_files(initramfs);
+            },
+            Command.GetFileContent => {
+                uart.send_str("Filename: ");
+                recvlen = uart.recv_str(&buffer);
+
+                const initramfs_ptr: [*]const u8 = @ptrFromInt(0x8000000);
+                const initramfs = initramfs_ptr[0..65536];
+                cpio.get_file_content(initramfs, buffer[0..recvlen]);
             },
         }
     }
