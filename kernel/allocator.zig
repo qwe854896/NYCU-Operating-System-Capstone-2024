@@ -1,5 +1,6 @@
 const utils = @import("utils.zig");
 
+// TODO: determine the address of fake heap
 const _heap_start = 0x800000;
 var heap_offset: usize = 0;
 

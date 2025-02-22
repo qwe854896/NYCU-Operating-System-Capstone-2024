@@ -1,6 +1,7 @@
 const utils = @import("utils.zig");
 const uart = @import("uart.zig");
 
+// TODO: enlarge the size of initramfs
 const INITRAMFS_PTR: [*]const u8 = @ptrFromInt(0x8000000);
 const INITRAMFS = INITRAMFS_PTR[0..65536];
 
