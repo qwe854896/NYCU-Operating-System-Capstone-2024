@@ -2,6 +2,7 @@
 
 const mmio = @import("mmio.zig");
 const uart = @import("uart.zig");
+const allocator = @import("allocator.zig");
 
 const Register = mmio.Register;
 
@@ -23,7 +24,7 @@ const END_TAG = 0x00000000;
 const GET_BOARD_REVISION = 0x00010002;
 const GET_ARM_MEMORY = 0x00010005;
 
-fn mailbox_call(mailbox: []u32) bool {
+fn mailbox_call(mailbox: []const u32) bool {
     // Combine the message address (upper 28 bits) with channel number (lower 4 bits)
     const addr = @as(u32, @intCast(@intFromPtr(mailbox.ptr))) & ~@as(u32, 0xF);
     const message = addr | 8;
@@ -63,7 +64,6 @@ fn number_to_hex_string(number: u32, buffer: []u8) usize {
         num >>= 4;
         len += 1;
     }
-    buffer[len] = 0;
 
     // Reverse the string
     for (0..len / 2) |j| {
@@ -76,8 +76,8 @@ fn number_to_hex_string(number: u32, buffer: []u8) usize {
 }
 
 fn send_hex(prefix: []const u8, value: u32) void {
-    var buffer: [256]u8 align(16) = undefined;
-    const hexlen = number_to_hex_string(value, &buffer);
+    var buffer = allocator.simple_alloc(8);
+    const hexlen = number_to_hex_string(value, buffer);
     uart.send_str(prefix);
     uart.send_str(buffer[0..hexlen]);
     uart.send_str("\n");

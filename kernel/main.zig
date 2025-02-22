@@ -5,6 +5,7 @@ const uart = @import("uart.zig");
 const mailbox = @import("mailbox.zig");
 const reboot = @import("reboot.zig");
 const cpio = @import("cpio.zig");
+const allocator = @import("allocator.zig");
 
 const Command = enum {
     None,
@@ -35,8 +36,8 @@ fn simple_shell() void {
     while (true) {
         uart.send_str("# ");
 
-        var buffer: [256]u8 = undefined;
-        var recvlen = uart.recv_str(&buffer);
+        var buffer = allocator.simple_alloc(256);
+        var recvlen = uart.recv_str(buffer);
         const command = parse_command(buffer[0..recvlen]);
 
         switch (command) {
@@ -64,7 +65,7 @@ fn simple_shell() void {
             },
             Command.GetFileContent => {
                 uart.send_str("Filename: ");
-                recvlen = uart.recv_str(&buffer);
+                recvlen = uart.recv_str(buffer);
                 cpio.get_file_content(buffer[0..recvlen]);
             },
         }
