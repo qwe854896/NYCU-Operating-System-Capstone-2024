@@ -1,6 +1,11 @@
 SECTIONS
 {
-    .text.boot 0x80000 : {
+    .text.bootloader 0x40000 : {
+        *(.text.bootloader)
+    }
+
+    .text.boot : {
+        _text_boot_start = .;
         *(.text.boot)
     }
 

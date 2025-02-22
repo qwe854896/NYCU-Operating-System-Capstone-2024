@@ -2,7 +2,7 @@ const std = @import("std");
 const gpio = @import("gpio.zig");
 const uart = @import("uart.zig");
 
-const KERNEL_LOAD_ADDRESS = 0x100000;
+const KERNEL_LOAD_ADDRESS = 0x80000;
 const START_BYTE: u8 = 0xAC;
 
 // Main function for the kernel
@@ -31,6 +31,21 @@ export fn main() void {
 
 comptime {
     asm (
+        \\ .section .text.bootloader
+        \\ .global _start_bootloader
+        \\ _start_bootloader:
+        \\      ldr x1, =_start_bootloader
+        \\      ldr x2, =_bss_start
+        \\      ldr x3, =0x80000
+        \\ 1:
+        \\      cmp x1, x2
+        \\      b.ge 2f
+        \\      ldr x4, [x3], #8
+        \\      str x4, [x1], #8
+        \\      b 1b
+        \\ 2:
+        \\      ldr x0, =_text_boot_start
+        \\      br x0
         \\ .section .text.boot
         \\ .global _start
         \\ _start:
@@ -46,7 +61,7 @@ comptime {
         \\      b 1b
         \\ 2:
         \\      bl main
-        \\      ldr x0, =0x100000
+        \\      ldr x0, =0x80000
         \\      br x0
     );
 }
