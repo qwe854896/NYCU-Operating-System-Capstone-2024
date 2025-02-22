@@ -78,9 +78,13 @@ pub fn build(b: *std.Build) !void {
         "-serial",
         "null",
         "-serial",
-        "pty",
+        // "pty", // if you want to test bootloader
+        "stdio",
+        "-initrd",
+        "initramfs/initramfs.cpio",
         "-kernel",
-        bootloader_img_path,
+        // bootloader_img_path, // if you want to test bootloader
+        kernel_img_path,
     });
     var current_qemu_args = try qemu_args.clone();
     const qemu_command = b.addSystemCommand(try current_qemu_args.toOwnedSlice());
