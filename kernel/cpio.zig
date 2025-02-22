@@ -1,6 +1,9 @@
 const utils = @import("utils.zig");
 const uart = @import("uart.zig");
 
+const INITRAMFS_PTR: [*]const u8 = @ptrFromInt(0x8000000);
+const INITRAMFS = INITRAMFS_PTR[0..65536];
+
 const Header = extern struct {
     magic: [6]u8 align(1),
     ino: [8]u8 align(1),
@@ -18,19 +21,19 @@ const Header = extern struct {
     check: [8]u8 align(1),
 };
 
-pub fn list_files(buffer: []const u8) void {
+pub fn list_files() void {
     var offset: usize = 0;
 
-    while (offset + @sizeOf(Header) <= buffer.len) {
-        const header: *const Header = @alignCast(@ptrCast(buffer[offset..].ptr));
+    while (offset + @sizeOf(Header) <= INITRAMFS.len) {
+        const header: *const Header = @alignCast(@ptrCast(INITRAMFS[offset..].ptr));
 
         if (utils.strcmp(header.magic[0..6], "070701")) {
             offset += @sizeOf(Header);
 
             const name_size = utils.parse_hex(header.namesize[0..8]);
-            if (offset + name_size > buffer.len) break;
+            if (offset + name_size > INITRAMFS.len) break;
 
-            const name = buffer[offset .. offset + name_size - 1];
+            const name = INITRAMFS[offset .. offset + name_size - 1];
 
             offset = utils.align_up(offset + name_size, 4);
 
@@ -47,28 +50,28 @@ pub fn list_files(buffer: []const u8) void {
     }
 }
 
-pub fn get_file_content(buffer: []const u8, filename: []const u8) void {
+pub fn get_file_content(filename: []const u8) void {
     var offset: usize = 0;
 
-    while (offset + @sizeOf(Header) <= buffer.len) {
-        const header: *const Header = @alignCast(@ptrCast(buffer[offset..].ptr));
+    while (offset + @sizeOf(Header) <= INITRAMFS.len) {
+        const header: *const Header = @alignCast(@ptrCast(INITRAMFS[offset..].ptr));
 
         if (utils.strcmp(header.magic[0..6], "070701")) {
             offset += @sizeOf(Header);
 
             const name_size = utils.parse_hex(header.namesize[0..8]);
-            if (offset + name_size > buffer.len) break;
+            if (offset + name_size > INITRAMFS.len) break;
 
-            const name = buffer[offset .. offset + name_size - 1];
+            const name = INITRAMFS[offset .. offset + name_size - 1];
             offset = utils.align_up(offset + name_size, 4);
 
             if (utils.strcmp(name, "TRAILER!!!")) break;
 
             if (utils.strcmp(name, filename)) {
                 const file_size = utils.parse_hex(header.filesize[0..8]);
-                if (offset + file_size > buffer.len) break;
+                if (offset + file_size > INITRAMFS.len) break;
 
-                uart.send_str(buffer[offset .. offset + file_size]);
+                uart.send_str(INITRAMFS[offset .. offset + file_size]);
                 break;
             }
 

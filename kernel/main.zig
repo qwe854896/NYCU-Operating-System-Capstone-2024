@@ -60,17 +60,12 @@ fn simple_shell() void {
                 reboot.reset(100);
             },
             Command.ListFiles => {
-                const initramfs_ptr: [*]const u8 = @ptrFromInt(0x8000000);
-                const initramfs = initramfs_ptr[0..65536];
-                cpio.list_files(initramfs);
+                cpio.list_files();
             },
             Command.GetFileContent => {
                 uart.send_str("Filename: ");
                 recvlen = uart.recv_str(&buffer);
-
-                const initramfs_ptr: [*]const u8 = @ptrFromInt(0x8000000);
-                const initramfs = initramfs_ptr[0..65536];
-                cpio.get_file_content(initramfs, buffer[0..recvlen]);
+                cpio.get_file_content(buffer[0..recvlen]);
             },
         }
     }
