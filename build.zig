@@ -3,6 +3,7 @@ const std = @import("std");
 pub fn build(b: *std.Build) !void {
     const ARCH = "aarch64";
     const MODEL = "raspi3b";
+    const BOOTLOADER_NAME = "bootloader";
     const KERNEL_NAME = "kernel8";
     const CROSS_COMPILE = ARCH ++ "-linux-gnu-";
     const OBJCOPY = CROSS_COMPILE ++ "objcopy";
@@ -20,13 +21,13 @@ pub fn build(b: *std.Build) !void {
     const kernel_elf_path = b.getInstallPath(.bin, kernel_elf_name);
     const kernel = b.addExecutable(.{
         .name = kernel_elf_name,
-        .root_source_file = b.path("src/main.zig"),
+        .root_source_file = b.path("kernel/main.zig"),
         .linkage = .static,
         .link_libc = false,
         .target = target,
         .optimize = optimize,
     });
-    kernel.setLinkerScript(b.path("src/linker.ld"));
+    kernel.setLinkerScript(b.path("kernel/linker.ld"));
     b.installArtifact(kernel);
 
     const kernel_img_name = KERNEL_NAME ++ ".img";
@@ -39,6 +40,30 @@ pub fn build(b: *std.Build) !void {
         kernel_img_path,
     });
     kernel_img.step.dependOn(b.getInstallStep());
+
+    const bootloader_elf_name = BOOTLOADER_NAME ++ ".elf";
+    const bootloader_elf_path = b.getInstallPath(.bin, bootloader_elf_name);
+    const bootloader = b.addExecutable(.{
+        .name = bootloader_elf_name,
+        .root_source_file = b.path("bootloader/main.zig"),
+        .linkage = .static,
+        .link_libc = false,
+        .target = target,
+        .optimize = optimize,
+    });
+    bootloader.setLinkerScript(b.path("bootloader/linker.ld"));
+    b.installArtifact(bootloader);
+
+    const bootloader_img_name = BOOTLOADER_NAME ++ ".img";
+    const bootloader_img_path = b.getInstallPath(.bin, bootloader_img_name);
+    const bootloader_img = b.addSystemCommand(&.{
+        OBJCOPY,
+        "-O",
+        "binary",
+        bootloader_elf_path,
+        bootloader_img_path,
+    });
+    bootloader_img.step.dependOn(b.getInstallStep());
 
     // start qemu if use `zig build qemu`
     const qemu_step = b.step("run", "Run in qemu");
@@ -53,13 +78,14 @@ pub fn build(b: *std.Build) !void {
         "-serial",
         "null",
         "-serial",
-        "stdio",
+        "pty",
         "-kernel",
-        kernel_img_path,
+        bootloader_img_path,
     });
     var current_qemu_args = try qemu_args.clone();
     const qemu_command = b.addSystemCommand(try current_qemu_args.toOwnedSlice());
 
+    qemu_command.step.dependOn(&bootloader_img.step);
     qemu_command.step.dependOn(&kernel_img.step);
     qemu_step.dependOn(&qemu_command.step);
 
@@ -72,6 +98,7 @@ pub fn build(b: *std.Build) !void {
     });
     const qemu_debug_command = b.addSystemCommand(try current_qemu_args.toOwnedSlice());
 
+    qemu_debug_command.step.dependOn(&bootloader_img.step);
     qemu_debug_command.step.dependOn(&kernel_img.step);
     qemu_debug_step.dependOn(&qemu_debug_command.step);
 }

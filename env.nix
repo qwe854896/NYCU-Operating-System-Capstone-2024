@@ -5,6 +5,7 @@
   qemu,
   pwndbg,
   zig,
+  python312,
 }:
 
 mkShell {
@@ -12,6 +13,7 @@ mkShell {
   depsBuildBuild = [
     clang-tools
     qemu
+    python312
     pwndbg.packages.x86_64-linux.default
     zig.packages.x86_64-linux.default
   ];
