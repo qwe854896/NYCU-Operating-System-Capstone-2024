@@ -13,7 +13,10 @@
       ...
     }:
     let
-      eachSystem = nixpkgs.lib.genAttrs [ "x86_64-linux" ];
+      eachSystem = nixpkgs.lib.genAttrs [
+        "x86_64-linux"
+        "aarch64-darwin"
+      ];
     in
     {
       devShell = eachSystem (
@@ -24,7 +27,7 @@
             crossSystem.config = "aarch64-linux-gnu";
           };
         in
-        pkgs.callPackage ./env.nix { inherit pwndbg zig; }
+        pkgs.callPackage ./env.nix { inherit system pwndbg zig; }
       );
     };
 }

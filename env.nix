@@ -1,4 +1,5 @@
 {
+  system,
   stdenv,
   mkShell,
   clang-tools,
@@ -14,8 +15,8 @@ mkShell {
     clang-tools
     qemu
     python312
-    pwndbg.packages.x86_64-linux.default
-    zig.packages.x86_64-linux.default
+    pwndbg.packages.${system}.pwndbg-lldb
+    zig.packages.${system}.default
   ];
   hardeningDisable = [ "all" ];
 }
