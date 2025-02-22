@@ -1,4 +1,5 @@
 const std = @import("std");
+const utils = @import("utils.zig");
 const gpio = @import("gpio.zig");
 const uart = @import("uart.zig");
 const mailbox = @import("mailbox.zig");
@@ -14,30 +15,16 @@ const Command = enum {
     GetFileContent,
 };
 
-fn strcmp(a: []const u8, b: []const u8) bool {
-    if (a.len != b.len) {
-        return false;
-    }
-
-    for (0.., a) |i, a_byte| {
-        if (a_byte != b[i]) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
 fn parse_command(command: []const u8) Command {
-    if (strcmp(command, "hello")) {
+    if (utils.strcmp(command, "hello")) {
         return Command.Hello;
-    } else if (strcmp(command, "help")) {
+    } else if (utils.strcmp(command, "help")) {
         return Command.Help;
-    } else if (strcmp(command, "reboot")) {
+    } else if (utils.strcmp(command, "reboot")) {
         return Command.Reboot;
-    } else if (strcmp(command, "ls")) {
+    } else if (utils.strcmp(command, "ls")) {
         return Command.ListFiles;
-    } else if (strcmp(command, "cat")) {
+    } else if (utils.strcmp(command, "cat")) {
         return Command.GetFileContent;
     } else {
         return Command.None;
