@@ -30,6 +30,7 @@ export fn main() void {
 }
 
 comptime {
+    // Avoid using x0 as it stores the address of dtb
     asm (
         \\ .section .text.bootloader
         \\ .global _start_bootloader
@@ -44,13 +45,13 @@ comptime {
         \\      str x4, [x1], #8
         \\      b 1b
         \\ 2:
-        \\      ldr x0, =_text_boot_start
-        \\      br x0
+        \\      ldr x1, =_text_boot_start
+        \\      br x1
         \\ .section .text.boot
         \\ .global _start
         \\ _start:
-        \\      ldr x0, =_stack_top
-        \\      mov sp, x0
+        \\      ldr x1, =_stack_top
+        \\      mov sp, x1
         \\      ldr x1, =_bss_start
         \\      ldr x2, =_bss_end
         \\      mov x3, #0
@@ -61,7 +62,7 @@ comptime {
         \\      b 1b
         \\ 2:
         \\      bl main
-        \\      ldr x0, =0x80000
-        \\      br x0
+        \\      ldr x1, =0x80000
+        \\      br x1
     );
 }

@@ -98,12 +98,13 @@ export fn main() void {
 }
 
 comptime {
+    // Avoid using x0 as it stores the address of dtb
     asm (
         \\ .section .text.boot
         \\ .global _start
         \\ _start:
-        \\      ldr x0, =_stack_top
-        \\      mov sp, x0
+        \\      ldr x1, =_stack_top
+        \\      mov sp, x1
         \\      ldr x1, =_bss_start
         \\      ldr x2, =_bss_end
         \\      mov x3, #0
