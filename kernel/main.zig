@@ -87,9 +87,11 @@ fn simple_shell() void {
 }
 
 // Main function for the kernel
-export fn main() void {
+export fn main(dtb_address: usize) void {
     gpio.init();
     uart.init();
+
+    utils.send_hex("DTB Address: 0x", @intCast(dtb_address));
 
     mailbox.get_board_revision();
     mailbox.get_arm_memory();

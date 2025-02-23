@@ -6,7 +6,7 @@ const KERNEL_LOAD_ADDRESS = 0x80000;
 const START_BYTE: u8 = 0xAC;
 
 // Main function for the kernel
-export fn main() void {
+export fn main(dtb_address: usize) usize {
     gpio.init();
     uart.init();
 
@@ -27,6 +27,8 @@ export fn main() void {
     for (0..kernel_size) |i| {
         dest[i] = uart.recv();
     }
+
+    return dtb_address; // pass to the actual kernel
 }
 
 comptime {
