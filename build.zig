@@ -81,9 +81,9 @@ pub fn build(b: *std.Build) !void {
         // "pty", // if you want to test bootloader
         "stdio",
         "-initrd",
-        "initramfs/initramfs.cpio",
+        "assets/initramfs.cpio",
         "-dtb",
-        "bcm2710-rpi-3-b-plus.dtb",
+        "assets/bcm2710-rpi-3-b-plus.dtb",
         "-kernel",
         // bootloader_img_path, // if you want to test bootloader
         kernel_img_path,
