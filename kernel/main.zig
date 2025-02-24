@@ -86,7 +86,7 @@ fn simple_shell() void {
                 demo_buffer[0] = 'A';
                 demo_buffer[1] = 'B';
 
-                utils.send_hex("Buffer Address: 0x", @intCast(@intFromPtr(demo_buffer.ptr)));
+                _ = MiniUARTWriter.print("Buffer Address: 0x{X}\n", .{@intFromPtr(demo_buffer.ptr)}) catch {};
                 _ = MiniUARTWriter.write("Buffer Content: ") catch {};
                 _ = MiniUARTWriter.write(demo_buffer) catch {};
                 _ = MiniUARTWriter.write("\n") catch {};
