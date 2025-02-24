@@ -2,19 +2,7 @@ const std = @import("std");
 const allocator = @import("allocator.zig");
 const uart = @import("uart.zig");
 
-pub fn strcmp(a: []const u8, b: []const u8) bool {
-    if (a.len != b.len) {
-        return false;
-    }
 
-    for (0.., a) |i, a_byte| {
-        if (a_byte != b[i]) {
-            return false;
-        }
-    }
-
-    return true;
-}
 
 pub fn parse_hex(buf: []const u8) u32 {
     return std.fmt.parseInt(u32, buf, 16) catch 0;

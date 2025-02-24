@@ -1,3 +1,4 @@
+const std = @import("std");
 const utils = @import("utils.zig");
 const uart = @import("uart.zig");
 
@@ -28,7 +29,7 @@ pub fn list_files() void {
     while (offset + @sizeOf(Header) <= INITRAMFS.len) {
         const header: *const Header = @alignCast(@ptrCast(INITRAMFS[offset..].ptr));
 
-        if (utils.strcmp(header.magic[0..6], "070701")) {
+        if (std.mem.eql(u8, header.magic[0..6], "070701")) {
             offset += @sizeOf(Header);
 
             const name_size = utils.parse_hex(header.namesize[0..8]);
@@ -38,7 +39,7 @@ pub fn list_files() void {
 
             offset = utils.align_up(offset + name_size, 4);
 
-            if (utils.strcmp(name, "TRAILER!!!")) break;
+            if (std.mem.eql(u8, name, "TRAILER!!!")) break;
 
             uart.send_str(name);
             uart.send_str("\n");
@@ -57,7 +58,7 @@ pub fn get_file_content(filename: []const u8) void {
     while (offset + @sizeOf(Header) <= INITRAMFS.len) {
         const header: *const Header = @alignCast(@ptrCast(INITRAMFS[offset..].ptr));
 
-        if (utils.strcmp(header.magic[0..6], "070701")) {
+        if (std.mem.eql(u8, header.magic[0..6], "070701")) {
             offset += @sizeOf(Header);
 
             const name_size = utils.parse_hex(header.namesize[0..8]);
@@ -66,9 +67,9 @@ pub fn get_file_content(filename: []const u8) void {
             const name = INITRAMFS[offset .. offset + name_size - 1];
             offset = utils.align_up(offset + name_size, 4);
 
-            if (utils.strcmp(name, "TRAILER!!!")) break;
+            if (std.mem.eql(u8, name, "TRAILER!!!")) break;
 
-            if (utils.strcmp(name, filename)) {
+            if (std.mem.eql(u8, name, filename)) {
                 const file_size = utils.parse_hex(header.filesize[0..8]);
                 if (offset + file_size > INITRAMFS.len) break;
 

@@ -9,12 +9,10 @@ pub fn build(b: *std.Build) !void {
     const OBJCOPY = CROSS_COMPILE ++ "objcopy";
     const QEMU = "qemu-system-" ++ ARCH;
 
-    const target = b.resolveTargetQuery(std.zig.CrossTarget{
-        .cpu_arch = .aarch64,
-        .os_tag = .freestanding,
-        .abi = .eabi,
-        .cpu_model = .{ .explicit = &std.Target.aarch64.cpu.cortex_a53 },
-    });
+    const target = b.resolveTargetQuery(std.Target.Query.parse(.{
+        .arch_os_abi = "aarch64-freestanding-eabi",
+        .cpu_features = "cortex_a53+strict_align",
+    }) catch @panic("failed to obtain platform target"));
     const optimize = b.standardOptimizeOption(.{});
 
     const kernel_elf_name = KERNEL_NAME ++ ".elf";

@@ -18,17 +18,18 @@ const Command = enum {
 };
 
 fn parse_command(command: []const u8) Command {
-    if (utils.strcmp(command, "hello")) {
+    // if (std.mem.eql(u8, command, "hello")) {
+    if (std.mem.eql(u8, command, "hello")) {
         return Command.Hello;
-    } else if (utils.strcmp(command, "help")) {
+    } else if (std.mem.eql(u8, command, "help")) {
         return Command.Help;
-    } else if (utils.strcmp(command, "reboot")) {
+    } else if (std.mem.eql(u8, command, "reboot")) {
         return Command.Reboot;
-    } else if (utils.strcmp(command, "ls")) {
+    } else if (std.mem.eql(u8, command, "ls")) {
         return Command.ListFiles;
-    } else if (utils.strcmp(command, "cat")) {
+    } else if (std.mem.eql(u8, command, "cat")) {
         return Command.GetFileContent;
-    } else if (utils.strcmp(command, "demo")) {
+    } else if (std.mem.eql(u8, command, "demo")) {
         return Command.DemoSimpleAlloc;
     } else {
         return Command.None;
