@@ -80,12 +80,18 @@ fn simple_shell() void {
                 cpio.get_file_content(buffer[0..recvlen]);
             },
             Command.DemoSimpleAlloc => {
-                var demo_buffer = SimpleAllocator.alloc(u8, 256) catch {
+                _ = MiniUARTWriter.write("Length of Allocated Memory?: ") catch {};
+                recvlen = MiniUARTReader.read(buffer) catch 0;
+
+                const name_size = std.fmt.parseInt(u32, buffer[0..recvlen], 10) catch 0;
+                const demo_buffer = SimpleAllocator.alloc(u8, name_size) catch {
                     continue;
                 };
-                demo_buffer[0] = 'A';
-                demo_buffer[1] = 'B';
 
+                _ = MiniUARTWriter.write("Content: ") catch {};
+                recvlen = MiniUARTReader.read(demo_buffer) catch 0;
+
+                _ = MiniUARTWriter.write("\n") catch {};
                 _ = MiniUARTWriter.print("Buffer Address: 0x{X}\n", .{@intFromPtr(demo_buffer.ptr)}) catch {};
                 _ = MiniUARTWriter.write("Buffer Content: ") catch {};
                 _ = MiniUARTWriter.write(demo_buffer) catch {};
