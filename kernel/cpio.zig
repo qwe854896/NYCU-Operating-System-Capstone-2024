@@ -34,7 +34,7 @@ pub fn list_files() void {
         if (std.mem.eql(u8, header.magic[0..6], "070701")) {
             offset += @sizeOf(Header);
 
-            const name_size = utils.parse_hex(header.namesize[0..8]);
+            const name_size = std.fmt.parseInt(u32, header.namesize[0..8], 16) catch 0;
             if (offset + name_size > INITRAMFS.len) break;
 
             const name = INITRAMFS[offset .. offset + name_size - 1];
@@ -46,7 +46,7 @@ pub fn list_files() void {
             _ = MiniUARTWriter.write(name) catch {};
             _ = MiniUARTWriter.write("\n") catch {};
 
-            const file_size = utils.parse_hex(header.filesize[0..8]);
+            const file_size = std.fmt.parseInt(u32, header.filesize[0..8], 16) catch 0;
             offset = utils.align_up(offset + file_size, 4);
         } else {
             break;
@@ -63,7 +63,7 @@ pub fn get_file_content(filename: []const u8) void {
         if (std.mem.eql(u8, header.magic[0..6], "070701")) {
             offset += @sizeOf(Header);
 
-            const name_size = utils.parse_hex(header.namesize[0..8]);
+            const name_size = std.fmt.parseInt(u32, header.namesize[0..8], 16) catch 0;
             if (offset + name_size > INITRAMFS.len) break;
 
             const name = INITRAMFS[offset .. offset + name_size - 1];
@@ -72,14 +72,14 @@ pub fn get_file_content(filename: []const u8) void {
             if (std.mem.eql(u8, name, "TRAILER!!!")) break;
 
             if (std.mem.eql(u8, name, filename)) {
-                const file_size = utils.parse_hex(header.filesize[0..8]);
+                const file_size = std.fmt.parseInt(u32, header.filesize[0..8], 16) catch 0;
                 if (offset + file_size > INITRAMFS.len) break;
 
                 _ = MiniUARTWriter.write(INITRAMFS[offset .. offset + file_size]) catch {};
                 break;
             }
 
-            const file_size = utils.parse_hex(header.filesize[0..8]);
+            const file_size = std.fmt.parseInt(u32, header.filesize[0..8], 16) catch 0;
             offset = utils.align_up(offset + file_size, 4);
         } else {
             break;

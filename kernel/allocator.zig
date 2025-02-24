@@ -28,8 +28,7 @@ fn alloc(_: *anyopaque, len: usize, log2_align: u8, _: usize) ?[*]u8 {
 
     const alignment = @as(usize, 1) << @as(Allocator.Log2Align, @intCast(log2_align));
 
-    var addr = _heap_start + heap_offset;
-    addr = utils.align_up(addr, alignment);
+    var addr = utils.align_up(_heap_start + heap_offset, alignment);
 
     const ptr: [*]u8 = @ptrFromInt(addr);
     addr += len;
