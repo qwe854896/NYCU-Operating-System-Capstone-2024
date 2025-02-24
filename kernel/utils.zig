@@ -2,7 +2,9 @@ const std = @import("std");
 const allocator = @import("allocator.zig");
 const uart = @import("uart.zig");
 
+const MiniUARTWriter = uart.MiniUARTWriter;
 
+const SimpleAllocator = allocator.SimpleAllocator;
 
 pub fn parse_hex(buf: []const u8) u32 {
     return std.fmt.parseInt(u32, buf, 16) catch 0;
@@ -13,7 +15,9 @@ pub fn align_up(value: usize, size: usize) usize {
 }
 
 pub fn send_hex(prefix: []const u8, value: u32) void {
-    var buffer = allocator.simple_alloc(8);
+    var buffer = SimpleAllocator.alloc(u8, 8) catch {
+        @panic("Out of Memory! No buffer for sending hex string");
+    };
     const hexlen = number_to_hex_string(value, buffer);
     uart.send_str(prefix);
     uart.send_str(buffer[0..hexlen]);

@@ -7,6 +7,8 @@ const reboot = @import("reboot.zig");
 const cpio = @import("cpio.zig");
 const allocator = @import("allocator.zig");
 
+const SimpleAllocator = allocator.SimpleAllocator;
+
 const Command = enum {
     None,
     Hello,
@@ -37,7 +39,9 @@ fn parse_command(command: []const u8) Command {
 }
 
 fn simple_shell() void {
-    var buffer = allocator.simple_alloc(256);
+    var buffer = SimpleAllocator.alloc(u8, 256) catch {
+        @panic("Out of Memory! No buffer for simple shell.");
+    };
     while (true) {
         uart.send_str("# ");
 
@@ -74,7 +78,9 @@ fn simple_shell() void {
                 cpio.get_file_content(buffer[0..recvlen]);
             },
             Command.DemoSimpleAlloc => {
-                var demo_buffer = allocator.simple_alloc(256);
+                var demo_buffer = SimpleAllocator.alloc(u8, 256) catch {
+                    continue;
+                };
                 demo_buffer[0] = 'A';
                 demo_buffer[1] = 'B';
 
