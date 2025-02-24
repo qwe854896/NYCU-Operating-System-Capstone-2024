@@ -93,6 +93,14 @@ fn simple_shell() void {
     }
 }
 
+pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, _: ?usize) noreturn {
+    _ = error_return_trace;
+    uart.send_str("\n!KERNEL PANIC!\n");
+    uart.send_str(msg);
+    uart.send_str("\n");
+    while (true) {}
+}
+
 // Main function for the kernel
 export fn main(dtb_address: usize) void {
     gpio.init();
