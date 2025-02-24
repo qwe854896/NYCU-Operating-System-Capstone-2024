@@ -6,6 +6,7 @@ const allocator = @import("allocator.zig");
 const utils = @import("utils.zig");
 
 const Register = mmio.Register;
+const MiniUARTWriter = uart.MiniUARTWriter;
 
 const MAILBOX_BASE = mmio.MMIO_BASE + 0xb880;
 
@@ -64,7 +65,7 @@ pub fn get_board_revision() void {
     if (mailbox_call(mailbox[0..])) {
         utils.send_hex("Board revision: 0x", mailbox[5]);
     } else {
-        uart.send_str("Failed to get board revision\n");
+        _ = MiniUARTWriter.write("Failed to get board revision\n") catch {};
     }
 }
 
@@ -84,6 +85,6 @@ pub fn get_arm_memory() void {
         utils.send_hex("ARM Memory Base: 0x", mailbox[5]);
         utils.send_hex("ARM Memory Size: 0x", mailbox[6]);
     } else {
-        uart.send_str("Failed to get arm memory\n");
+        _ = MiniUARTWriter.write("Failed to get arm memory\n") catch {};
     }
 }

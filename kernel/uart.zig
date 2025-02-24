@@ -1,4 +1,7 @@
+/// Reference: https://zig.guide/standard-library/readers-and-writers/
+const std = @import("std");
 const mmio = @import("mmio.zig");
+
 const Register = mmio.Register;
 
 const UART_BASE = mmio.MMIO_BASE + 0x215000;
@@ -58,29 +61,60 @@ fn recv() u8 {
     return @intCast(AUX_MU_IO_REG.read_raw() & 0xFF);
 }
 
-pub fn send_str(str: []const u8) void {
-    for (str) |byte| {
-        switch (byte) {
-            '\n' => {
-                send('\r');
-                send('\n');
-            },
-            else => send(byte),
+const MiniUARTWriter__ = struct {
+    const Self = @This();
+    const Writer = std.io.Writer(
+        Self,
+        error{},
+        writeFn,
+    );
+    fn writeFn(self: Self, data: []const u8) error{}!usize {
+        _ = self;
+        for (data) |byte| {
+            switch (byte) {
+                '\n' => {
+                    send('\r');
+                    send('\n');
+                },
+                else => send(byte),
+            }
         }
+        return data.len;
     }
-}
+    fn writer(self: Self) Writer {
+        return .{ .context = self };
+    }
+};
 
-pub fn recv_str(buffer: []u8) usize {
-    var i: usize = 0;
-    while (i < buffer.len) {
-        const c = recv();
-        if (c == '\r') {
-            send_str("\n");
-            break;
+const MiniUARTWriter_: MiniUARTWriter__ = undefined;
+pub const MiniUARTWriter = MiniUARTWriter_.writer();
+
+const MiniUARTReader__ = struct {
+    const Self = @This();
+    const Reader = std.io.Reader(
+        Self,
+        error{},
+        readFn,
+    );
+    fn readFn(self: Self, data: []u8) error{}!usize {
+        _ = self;
+        var i: usize = 0;
+        while (i < data.len) {
+            const c = recv();
+            if (c == '\r') {
+                _ = MiniUARTWriter.write("\n") catch {};
+                break;
+            }
+            send(c);
+            data[i] = c;
+            i += 1;
         }
-        send(c);
-        buffer[i] = c;
-        i += 1;
+        return i;
     }
-    return i;
-}
+    fn reader(self: Self) Reader {
+        return .{ .context = self };
+    }
+};
+
+const MiniUARTReader_: MiniUARTReader__ = undefined;
+pub const MiniUARTReader = MiniUARTReader_.reader();

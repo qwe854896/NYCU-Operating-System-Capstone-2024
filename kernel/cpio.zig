@@ -2,6 +2,8 @@ const std = @import("std");
 const utils = @import("utils.zig");
 const uart = @import("uart.zig");
 
+const MiniUARTWriter = uart.MiniUARTWriter;
+
 // TODO: enlarge the size of initramfs
 const INITRAMFS_PTR: [*]const u8 = @ptrFromInt(0x8000000);
 const INITRAMFS = INITRAMFS_PTR[0..65536];
@@ -41,8 +43,8 @@ pub fn list_files() void {
 
             if (std.mem.eql(u8, name, "TRAILER!!!")) break;
 
-            uart.send_str(name);
-            uart.send_str("\n");
+            _ = MiniUARTWriter.write(name) catch {};
+            _ = MiniUARTWriter.write("\n") catch {};
 
             const file_size = utils.parse_hex(header.filesize[0..8]);
             offset = utils.align_up(offset + file_size, 4);
@@ -73,7 +75,7 @@ pub fn get_file_content(filename: []const u8) void {
                 const file_size = utils.parse_hex(header.filesize[0..8]);
                 if (offset + file_size > INITRAMFS.len) break;
 
-                uart.send_str(INITRAMFS[offset .. offset + file_size]);
+                _ = MiniUARTWriter.write(INITRAMFS[offset .. offset + file_size]) catch {};
                 break;
             }
 

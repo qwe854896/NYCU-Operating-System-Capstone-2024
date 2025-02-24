@@ -8,6 +8,8 @@ const cpio = @import("cpio.zig");
 const allocator = @import("allocator.zig");
 
 const SimpleAllocator = allocator.SimpleAllocator;
+const MiniUARTReader = uart.MiniUARTReader;
+const MiniUARTWriter = uart.MiniUARTWriter;
 
 const Command = enum {
     None,
@@ -43,28 +45,28 @@ fn simple_shell() void {
         @panic("Out of Memory! No buffer for simple shell.");
     };
     while (true) {
-        uart.send_str("# ");
+        _ = MiniUARTWriter.write("# ") catch {};
 
-        var recvlen = uart.recv_str(buffer);
+        var recvlen = MiniUARTReader.read(buffer) catch 0;
         const command = parse_command(buffer[0..recvlen]);
 
         switch (command) {
             Command.Hello => {
-                uart.send_str("Hello, World!\n");
+                _ = MiniUARTWriter.write("Hello, World!\n") catch {};
             },
             Command.Help => {
-                uart.send_str("Commands:\n");
-                uart.send_str("  hello - Print 'Hello, World!'\n");
-                uart.send_str("  help - Print this help message\n");
-                uart.send_str("  reboot - Reboot the system\n");
-                uart.send_str("  ls - List files in the initramfs\n");
-                uart.send_str("  cat - Print the content of a file in the initramfs\n");
-                uart.send_str("  demo - Run a simple allocator demo\n");
+                _ = MiniUARTWriter.write("Commands:\n") catch {};
+                _ = MiniUARTWriter.write("  hello - Print 'Hello, World!'\n") catch {};
+                _ = MiniUARTWriter.write("  help - Print this help message\n") catch {};
+                _ = MiniUARTWriter.write("  reboot - Reboot the system\n") catch {};
+                _ = MiniUARTWriter.write("  ls - List files in the initramfs\n") catch {};
+                _ = MiniUARTWriter.write("  cat - Print the content of a file in the initramfs\n") catch {};
+                _ = MiniUARTWriter.write("  demo - Run a simple allocator demo\n") catch {};
             },
             Command.None => {
-                uart.send_str("Unknown command: ");
-                uart.send_str(buffer[0..recvlen]);
-                uart.send_str("\n");
+                _ = MiniUARTWriter.write("Unknown command: ") catch {};
+                _ = MiniUARTWriter.write(buffer[0..recvlen]) catch {};
+                _ = MiniUARTWriter.write("\n") catch {};
             },
             Command.Reboot => {
                 reboot.reset(100);
@@ -73,8 +75,8 @@ fn simple_shell() void {
                 cpio.list_files();
             },
             Command.GetFileContent => {
-                uart.send_str("Filename: ");
-                recvlen = uart.recv_str(buffer);
+                _ = MiniUARTWriter.write("Filename: ") catch {};
+                recvlen = MiniUARTReader.read(buffer) catch 0;
                 cpio.get_file_content(buffer[0..recvlen]);
             },
             Command.DemoSimpleAlloc => {
@@ -85,9 +87,9 @@ fn simple_shell() void {
                 demo_buffer[1] = 'B';
 
                 utils.send_hex("Buffer Address: 0x", @intCast(@intFromPtr(demo_buffer.ptr)));
-                uart.send_str("Buffer Content: ");
-                uart.send_str(demo_buffer);
-                uart.send_str("\n");
+                _ = MiniUARTWriter.write("Buffer Content: ") catch {};
+                _ = MiniUARTWriter.write(demo_buffer) catch {};
+                _ = MiniUARTWriter.write("\n") catch {};
             },
         }
     }
@@ -95,9 +97,9 @@ fn simple_shell() void {
 
 pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, _: ?usize) noreturn {
     _ = error_return_trace;
-    uart.send_str("\n!KERNEL PANIC!\n");
-    uart.send_str(msg);
-    uart.send_str("\n");
+    _ = MiniUARTWriter.write("\n!KERNEL PANIC!\n") catch {};
+    _ = MiniUARTWriter.write(msg) catch {};
+    _ = MiniUARTWriter.write("\n") catch {};
     while (true) {}
 }
 

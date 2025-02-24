@@ -19,9 +19,9 @@ pub fn send_hex(prefix: []const u8, value: u32) void {
         @panic("Out of Memory! No buffer for sending hex string");
     };
     const hexlen = number_to_hex_string(value, buffer);
-    uart.send_str(prefix);
-    uart.send_str(buffer[0..hexlen]);
-    uart.send_str("\n");
+    _ = MiniUARTWriter.write(prefix) catch {};
+    _ = MiniUARTWriter.write(buffer[0..hexlen]) catch {};
+    _ = MiniUARTWriter.write("\n") catch {};
 }
 
 fn number_to_hex_string(number: u32, buffer: []u8) usize {
