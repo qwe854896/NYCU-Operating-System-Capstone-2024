@@ -1,12 +1,11 @@
 const std = @import("std");
-const utils = @import("utils.zig");
 const uart = @import("uart.zig");
 
-const MiniUARTWriter = uart.MiniUARTWriter;
+const mini_uart_writer = uart.mini_uart_writer;
 
 // TODO: enlarge the size of initramfs
-const INITRAMFS_PTR: [*]const u8 = @ptrFromInt(0x8000000);
-const INITRAMFS = INITRAMFS_PTR[0..65536];
+const initrd_start_ptr: [*]const u8 = @ptrFromInt(0x8000000);
+const initrd = initrd_start_ptr[0..65536];
 
 const Header = extern struct {
     magic: [6]u8 align(1),
@@ -25,62 +24,66 @@ const Header = extern struct {
     check: [8]u8 align(1),
 };
 
-pub fn list_files() void {
+fn alignUp(value: usize, size: usize) usize {
+    return (value + size - 1) & ~(size - 1);
+}
+
+pub fn listFiles() void {
     var offset: usize = 0;
 
-    while (offset + @sizeOf(Header) <= INITRAMFS.len) {
-        const header: *const Header = @alignCast(@ptrCast(INITRAMFS[offset..].ptr));
+    while (offset + @sizeOf(Header) <= initrd.len) {
+        const header: *const Header = @alignCast(@ptrCast(initrd[offset..].ptr));
 
         if (std.mem.eql(u8, header.magic[0..6], "070701")) {
             offset += @sizeOf(Header);
 
             const name_size = std.fmt.parseInt(u32, header.namesize[0..8], 16) catch 0;
-            if (offset + name_size > INITRAMFS.len) break;
+            if (offset + name_size > initrd.len) break;
 
-            const name = INITRAMFS[offset .. offset + name_size - 1];
+            const name = initrd[offset .. offset + name_size - 1];
 
-            offset = utils.align_up(offset + name_size, 4);
+            offset = alignUp(offset + name_size, 4);
 
             if (std.mem.eql(u8, name, "TRAILER!!!")) break;
 
-            _ = MiniUARTWriter.write(name) catch {};
-            _ = MiniUARTWriter.write("\n") catch {};
+            _ = mini_uart_writer.write(name) catch {};
+            _ = mini_uart_writer.write("\n") catch {};
 
             const file_size = std.fmt.parseInt(u32, header.filesize[0..8], 16) catch 0;
-            offset = utils.align_up(offset + file_size, 4);
+            offset = alignUp(offset + file_size, 4);
         } else {
             break;
         }
     }
 }
 
-pub fn get_file_content(filename: []const u8) void {
+pub fn getFileContent(filename: []const u8) void {
     var offset: usize = 0;
 
-    while (offset + @sizeOf(Header) <= INITRAMFS.len) {
-        const header: *const Header = @alignCast(@ptrCast(INITRAMFS[offset..].ptr));
+    while (offset + @sizeOf(Header) <= initrd.len) {
+        const header: *const Header = @alignCast(@ptrCast(initrd[offset..].ptr));
 
         if (std.mem.eql(u8, header.magic[0..6], "070701")) {
             offset += @sizeOf(Header);
 
             const name_size = std.fmt.parseInt(u32, header.namesize[0..8], 16) catch 0;
-            if (offset + name_size > INITRAMFS.len) break;
+            if (offset + name_size > initrd.len) break;
 
-            const name = INITRAMFS[offset .. offset + name_size - 1];
-            offset = utils.align_up(offset + name_size, 4);
+            const name = initrd[offset .. offset + name_size - 1];
+            offset = alignUp(offset + name_size, 4);
 
             if (std.mem.eql(u8, name, "TRAILER!!!")) break;
 
             if (std.mem.eql(u8, name, filename)) {
                 const file_size = std.fmt.parseInt(u32, header.filesize[0..8], 16) catch 0;
-                if (offset + file_size > INITRAMFS.len) break;
+                if (offset + file_size > initrd.len) break;
 
-                _ = MiniUARTWriter.write(INITRAMFS[offset .. offset + file_size]) catch {};
+                _ = mini_uart_writer.write(initrd[offset .. offset + file_size]) catch {};
                 break;
             }
 
             const file_size = std.fmt.parseInt(u32, header.filesize[0..8], 16) catch 0;
-            offset = utils.align_up(offset + file_size, 4);
+            offset = alignUp(offset + file_size, 4);
         } else {
             break;
         }
