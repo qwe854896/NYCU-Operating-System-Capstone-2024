@@ -1,11 +1,10 @@
 const std = @import("std");
 const uart = @import("uart.zig");
+const dtb = @import("dtb/dtb.zig");
 
 const mini_uart_writer = uart.mini_uart_writer;
 
-// TODO: enlarge the size of initramfs
-const initrd_start_ptr: [*]const u8 = @ptrFromInt(0x8000000);
-const initrd = initrd_start_ptr[0..65536];
+var initrd: []const u8 = undefined;
 
 const Header = extern struct {
     magic: [6]u8 align(1),
@@ -26,6 +25,25 @@ const Header = extern struct {
 
 fn alignUp(value: usize, size: usize) usize {
     return (value + size - 1) & ~(size - 1);
+}
+
+pub fn initRamfsCallback(dtb_root: *dtb.Node) void {
+    var initrd_start_ptr: [*]const u8 = undefined;
+    var initrd_end_ptr: [*]const u8 = undefined;
+
+    if (dtb_root.child("chosen")) |chosen_root| {
+        if (chosen_root.prop(dtb.Prop.LinuxInitrdStart)) |prop| {
+            _ = mini_uart_writer.print("Initrd Start: 0x{X}\n", .{prop}) catch {};
+            initrd_start_ptr = @ptrFromInt(prop);
+        }
+        if (chosen_root.prop(dtb.Prop.LinuxInitrdEnd)) |prop| {
+            _ = mini_uart_writer.print("Initrd End: 0x{X}\n", .{prop}) catch {};
+            initrd_end_ptr = @ptrFromInt(prop);
+        }
+    }
+
+    const len: usize = @intFromPtr(initrd_end_ptr) - @intFromPtr(initrd_start_ptr);
+    initrd = initrd_start_ptr[0..len];
 }
 
 pub fn listFiles() void {

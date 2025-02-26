@@ -5,6 +5,7 @@ const mailbox = @import("mailbox.zig");
 const reboot = @import("reboot.zig");
 const cpio = @import("cpio.zig");
 const allocator = @import("allocator.zig");
+const dtb = @import("dtb/main.zig");
 
 const simple_allocator = allocator.simple_allocator;
 const mini_uart_reader = uart.mini_uart_reader;
@@ -113,10 +114,11 @@ export fn main(dtb_address: usize) void {
     gpio.init();
     uart.init();
 
-    _ = mini_uart_writer.print("DTB Address: 0x{X}\n", .{dtb_address}) catch {};
-
     mailbox.getBoardRevision();
     mailbox.getArmMemory();
+
+    dtb.init(dtb_address);
+    dtb.fdtTraverse(cpio.initRamfsCallback);
 
     simpleShell();
 }
