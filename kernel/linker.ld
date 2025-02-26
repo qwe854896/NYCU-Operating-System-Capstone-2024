@@ -1,7 +1,7 @@
 SECTIONS
 {
     .text.boot 0x80000 : {
-        *(.text.boot)
+        KEEP(*(.text.boot))
     }
 
     .text : {
