@@ -24,7 +24,7 @@ const end_tag = 0x00000000;
 const get_board_revision = 0x00010002;
 const get_arm_memory = 0x00010005;
 
-fn mailbox_call(mailbox: []const u32) bool {
+fn mailbox_call(mailbox: []u32) bool {
     // Combine the message address (upper 28 bits) with channel number (lower 4 bits)
     const addr = @as(u32, @intCast(@intFromPtr(mailbox.ptr))) & ~@as(u32, 0xF);
     const message = addr | 8;
