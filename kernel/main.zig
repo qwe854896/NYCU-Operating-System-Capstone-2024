@@ -100,11 +100,11 @@ fn simpleShell() void {
     }
 }
 
-pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, _: ?usize) noreturn {
-    _ = error_return_trace;
+pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
     _ = mini_uart_writer.write("\n!KERNEL PANIC!\n") catch {};
     _ = mini_uart_writer.write(msg) catch {};
     _ = mini_uart_writer.write("\n") catch {};
+    reboot.reset(100);
     while (true) {}
 }
 
