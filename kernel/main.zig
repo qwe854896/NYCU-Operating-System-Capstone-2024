@@ -77,7 +77,7 @@ fn simpleShell() void {
                 reboot.reset(100);
             },
             Command.ListFiles => {
-                const fs = cpio.listFiles();
+                const fs = cpio.listFiles(simple_allocator);
                 if (fs) |files| {
                     for (files) |file| {
                         _ = mini_uart_writer.print("{s}\n", .{file}) catch {};
@@ -130,7 +130,7 @@ export fn main(dtb_address: usize) void {
     mailbox.getBoardRevision();
     mailbox.getArmMemory();
 
-    dtb.init(dtb_address);
+    dtb.init(simple_allocator, dtb_address);
     dtb.fdtTraverse(cpio.initRamfsCallback);
 
     simpleShell();

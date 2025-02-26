@@ -1,8 +1,5 @@
 const std = @import("std");
-const dtb = @import("dtb/dtb.zig");
-const allocator = @import("allocator.zig");
-
-const simple_allocator = allocator.simple_allocator;
+const dtb = @import("dtb/main.zig");
 
 var initrd: []const u8 = undefined;
 
@@ -46,8 +43,8 @@ pub fn initRamfsCallback(dtb_root: *dtb.Node) void {
     initrd = initrd_start_ptr[0..len];
 }
 
-pub fn listFiles() ?[][]const u8 {
-    var files = std.ArrayList([]const u8).init(simple_allocator);
+pub fn listFiles(allocator: std.mem.Allocator) ?[][]const u8 {
+    var files = std.ArrayList([]const u8).init(allocator);
     var offset: usize = 0;
 
     while (offset + @sizeOf(Header) <= initrd.len) {
