@@ -16,9 +16,9 @@ pub fn parse(allocator: std.mem.Allocator, blob: []const u8) Error!*dtb.Node {
 
     var root =
         switch (try parser.traverser.event()) {
-        .BeginNode => |node_name| try parser.handleNode(node_name, null, null),
-        else => return error.BadStructure,
-    };
+            .BeginNode => |node_name| try parser.handleNode(node_name, null, null),
+            else => return error.BadStructure,
+        };
     errdefer root.deinit(allocator);
 
     switch (try parser.traverser.event()) {
