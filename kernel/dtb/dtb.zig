@@ -166,7 +166,6 @@ pub const Prop = union(enum) {
     DeviceType: []const u8,
     LinuxInitrdStart: u64,
     LinuxInitrdEnd: u64,
-    Unresolved: PropUnresolved,
     Unknown: PropUnknown,
 
     pub fn format(prop: Prop, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
@@ -273,7 +272,6 @@ pub const Prop = union(enum) {
             .DeviceType => |v| try std.fmt.format(writer, "device_type: \"{s}\"", .{v}),
             .LinuxInitrdStart => |v| try std.fmt.format(writer, "linux,initrd-start: 0x{x:0>2}", .{v}),
             .LinuxInitrdEnd => |v| try std.fmt.format(writer, "linux,initrd-end: 0x{x:0>2}", .{v}),
-            .Unresolved => |_| try writer.writeAll("UNRESOLVED"),
             .Unknown => |v| try std.fmt.format(writer, "{'}: (unk {} bytes) <{}>", .{ std.zig.fmtEscapes(v.name), v.value.len, std.zig.fmtEscapes(v.value) }),
         }
     }
@@ -362,7 +360,6 @@ pub const Prop = union(enum) {
             .InterruptController,
             .InterruptParent,
             .Status,
-            .Unresolved,
             .Unknown,
             .ClockFrequency,
             .RegIoWidth,
@@ -374,14 +371,6 @@ pub const Prop = union(enum) {
     }
 };
 
-pub const PropUnresolved = union(enum) {
-    Reg: []const u8,
-    Ranges: []const u8,
-    Interrupts: []const u8,
-    Clocks: []const u8,
-    AssignedClocks: []const u8,
-};
-
 pub const PropUnknown = struct {
     name: []const u8,
     value: []const u8,
@@ -389,6 +378,3 @@ pub const PropUnknown = struct {
 
 pub const parse = parser.parse;
 pub const Error = parser.Error;
-
-const qemu_arm64_dtb = @embedFile("qemu_arm64.dtb");
-const rockpro64_dtb = @embedFile("rk3399-rockpro64.dtb");

@@ -16,7 +16,6 @@ pub fn init(allocator: std.mem.Allocator, dtb_address: usize) void {
 
     std.log.info("DTB Address: 0x{X}", .{dtb_address});
     std.log.info("DTB Size: 0x{X}", .{dtb_size});
-    // std.log.info("{}", .{dtb_root});
 }
 
 pub fn fdtTraverse(callbackFunc: fn (*dtb.Node) void) void {

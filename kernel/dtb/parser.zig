@@ -24,8 +24,6 @@ pub fn parse(allocator: std.mem.Allocator, blob: []const u8) Error!*dtb.Node {
         else => return error.Internal,
     }
 
-    try resolve(allocator, root, root);
-
     return root;
 }
 
@@ -137,16 +135,6 @@ const Parser = struct {
             return dtb.Prop{ .LinuxInitrdStart = try u32OrU64(value) };
         } else if (std.mem.eql(u8, name, "linux,initrd-end")) {
             return dtb.Prop{ .LinuxInitrdEnd = try u32OrU64(value) };
-            // } else if (std.mem.eql(u8, name, "reg")) {
-            //     return dtb.Prop{ .Unresolved = .{ .Reg = value } };
-        } else if (std.mem.eql(u8, name, "ranges")) {
-            return dtb.Prop{ .Unresolved = .{ .Ranges = value } };
-        } else if (std.mem.eql(u8, name, "interrupts")) {
-            return dtb.Prop{ .Unresolved = .{ .Interrupts = value } };
-            // } else if (std.mem.eql(u8, name, "clocks")) {
-            //     return dtb.Prop{ .Unresolved = .{ .Clocks = value } };
-        } else if (std.mem.eql(u8, name, "assigned-clocks")) {
-            return dtb.Prop{ .Unresolved = .{ .AssignedClocks = value } };
         } else {
             return dtb.Prop{ .Unknown = .{ .name = name, .value = value } };
         }
@@ -206,153 +194,3 @@ const Parser = struct {
         return error.BadValue;
     }
 };
-
-// ---
-
-fn resolve(allocator: std.mem.Allocator, root: *dtb.Node, current: *dtb.Node) Error!void {
-    // if (std.mem.eql(u8, current.name, "__symbols__")) { clocks
-    //     return;
-    // }
-    // if (std.mem.eql(u8, current.name, "vc_mem")) { regs
-    //     return;
-    // }
-
-    for (current.*.props) |*prop| {
-        switch (prop.*) {
-            .Unresolved => |unres| {
-                prop.* = try resolveProp(allocator, root, current, unres);
-            },
-            else => {},
-        }
-    }
-
-    for (current.*.children) |child| {
-        try resolve(allocator, root, child);
-    }
-}
-
-fn resolveProp(allocator: std.mem.Allocator, root: *dtb.Node, current: *dtb.Node, unres: dtb.PropUnresolved) !dtb.Prop {
-    switch (unres) {
-        .Reg => |v| {
-            const address_cells = (current.parent orelse return error.BadStructure).addressCells() orelse return error.MissingCells;
-            const size_cells = (current.parent orelse return error.BadStructure).sizeCells() orelse return error.MissingCells;
-            return dtb.Prop{ .Reg = try readArray(allocator, v, 2, [2]u32{ address_cells, size_cells }) };
-        },
-        .Ranges => |v| {
-            const address_cells = current.addressCells() orelse return error.MissingCells;
-            const parent_address_cells = (current.parent orelse return error.BadStructure).addressCells() orelse return error.MissingCells;
-            const size_cells = current.sizeCells() orelse return error.MissingCells;
-            return dtb.Prop{ .Ranges = try readArray(allocator, v, 3, [3]u32{ address_cells, parent_address_cells, size_cells }) };
-        },
-        .Interrupts => |v| {
-            const interrupt_cells = current.interruptCells() orelse return error.MissingCells;
-            const cs = try cells(allocator, v);
-            defer allocator.free(cs);
-            if (cs.len % interrupt_cells != 0) {
-                return error.BadStructure;
-            }
-
-            const group_count = cs.len / interrupt_cells;
-            var groups = try std.ArrayList([]u32).initCapacity(allocator, group_count);
-            errdefer {
-                for (groups.items) |group| allocator.free(group);
-                groups.deinit();
-            }
-
-            var group_i: usize = 0;
-            while (group_i < group_count) : (group_i += 1) {
-                var group = try allocator.alloc(u32, interrupt_cells);
-                var item_i: usize = 0;
-                while (item_i < interrupt_cells) : (item_i += 1) {
-                    group[item_i] = cs[group_i * interrupt_cells + item_i];
-                }
-                groups.appendAssumeCapacity(group);
-            }
-
-            return dtb.Prop{ .Interrupts = try groups.toOwnedSlice() };
-        },
-        .Clocks,
-        .AssignedClocks,
-        => |v| {
-            const cs = try cells(allocator, v);
-            defer allocator.free(cs);
-            var groups = std.ArrayList([]u32).init(allocator);
-            errdefer {
-                for (groups.items) |group| allocator.free(group);
-                groups.deinit();
-            }
-
-            var cell_i: usize = 0;
-            while (cell_i < cs.len) {
-                const phandle = cs[cell_i];
-                cell_i += 1;
-                const target = root.findPHandle(phandle) orelse return error.MissingCells;
-                const clock_cells = target.prop(.ClockCells) orelse return error.MissingCells;
-                var group = try allocator.alloc(u32, 1 + clock_cells);
-                errdefer allocator.free(group);
-                group[0] = phandle;
-                var item_i: usize = 0;
-                while (item_i < clock_cells) : (item_i += 1) {
-                    group[item_i + 1] = cs[cell_i];
-                    cell_i += 1;
-                }
-                try groups.append(group);
-            }
-
-            return switch (unres) {
-                .Clocks => dtb.Prop{ .Clocks = try groups.toOwnedSlice() },
-                .AssignedClocks => dtb.Prop{ .AssignedClocks = try groups.toOwnedSlice() },
-                else => unreachable,
-            };
-        },
-    }
-}
-
-// ---
-const READ_ARRAY_RETURN = u128;
-
-fn readArray(allocator: std.mem.Allocator, value: []const u8, comptime elem_count: usize, elems: [elem_count]u32) Error![][elem_count]READ_ARRAY_RETURN {
-    const cs = try cells(allocator, value);
-    defer allocator.free(cs);
-    var elems_sum: usize = 0;
-    for (elems) |elem| {
-        if (elem > (@sizeOf(READ_ARRAY_RETURN) / @sizeOf(u32))) {
-            return error.UnsupportedCells;
-        }
-        elems_sum += elem;
-    }
-
-    if (cs.len % elems_sum != 0)
-        return error.BadStructure;
-
-    var tuples: [][elem_count]READ_ARRAY_RETURN = try allocator.alloc([elem_count]READ_ARRAY_RETURN, cs.len / elems_sum);
-    errdefer allocator.free(tuples);
-    var tuple_i: usize = 0;
-
-    var cell_i: usize = 0;
-    while (cell_i < cs.len) : (tuple_i += 1) {
-        var elem_i: usize = 0;
-        while (elem_i < elem_count) : (elem_i += 1) {
-            var j: usize = undefined;
-            tuples[tuple_i][elem_i] = 0;
-            j = 0;
-            while (j < elems[elem_i]) : (j += 1) {
-                tuples[tuple_i][elem_i] = (tuples[tuple_i][elem_i] << 32) | cs[cell_i];
-                cell_i += 1;
-            }
-        }
-    }
-    return tuples;
-}
-
-fn cells(allocator: std.mem.Allocator, value: []const u8) ![]const u32 {
-    if (value.len % @sizeOf(u32) != 0)
-        return error.BadStructure;
-    const n = value.len / @sizeOf(u32);
-    var r = try allocator.alloc(u32, n);
-    errdefer allocator.free(r);
-    for (0..n) |i| {
-        r[i] = try Parser.integer(u32, value[i * @sizeOf(u32) ..][0..@sizeOf(u32)]);
-    }
-    return r;
-}
