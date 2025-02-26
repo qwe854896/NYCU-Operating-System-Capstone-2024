@@ -16,7 +16,7 @@ mkShell {
     qemu
     python312
     pwndbg.packages.${system}.pwndbg-lldb
-    zig.packages.${system}.default
+    zig.packages.${system}.master
   ];
   hardeningDisable = [ "all" ];
 }
