@@ -22,7 +22,6 @@ const Command = enum {
 };
 
 fn parseCommand(command: []const u8) Command {
-    // if (std.mem.eql(u8, command, "hello")) {
     if (std.mem.eql(u8, command, "hello")) {
         return Command.Hello;
     } else if (std.mem.eql(u8, command, "help")) {
