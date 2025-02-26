@@ -101,3 +101,14 @@ const MiniUARTReader = struct {
 
 pub const mini_uart_writer = MiniUARTWriter.init().writer();
 pub const mini_uart_reader = MiniUARTReader.init().reader();
+
+pub fn miniUARTLogFn(
+    comptime level: std.log.Level,
+    comptime scope: @Type(.enum_literal),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    _ = scope;
+    const prefix = "[" ++ comptime level.asText() ++ "] ";
+    nosuspend mini_uart_writer.print(prefix ++ format ++ "\n", args) catch return;
+}

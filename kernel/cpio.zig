@@ -1,8 +1,8 @@
 const std = @import("std");
-const uart = @import("uart.zig");
 const dtb = @import("dtb/dtb.zig");
+const allocator = @import("allocator.zig");
 
-const mini_uart_writer = uart.mini_uart_writer;
+const simple_allocator = allocator.simple_allocator;
 
 var initrd: []const u8 = undefined;
 
@@ -33,11 +33,11 @@ pub fn initRamfsCallback(dtb_root: *dtb.Node) void {
 
     if (dtb_root.child("chosen")) |chosen_root| {
         if (chosen_root.prop(dtb.Prop.LinuxInitrdStart)) |prop| {
-            _ = mini_uart_writer.print("Initrd Start: 0x{X}\n", .{prop}) catch {};
+            std.log.info("Initrd Start: 0x{X}", .{prop});
             initrd_start_ptr = @ptrFromInt(prop);
         }
         if (chosen_root.prop(dtb.Prop.LinuxInitrdEnd)) |prop| {
-            _ = mini_uart_writer.print("Initrd End: 0x{X}\n", .{prop}) catch {};
+            std.log.info("Initrd End: 0x{X}", .{prop});
             initrd_end_ptr = @ptrFromInt(prop);
         }
     }
@@ -46,7 +46,8 @@ pub fn initRamfsCallback(dtb_root: *dtb.Node) void {
     initrd = initrd_start_ptr[0..len];
 }
 
-pub fn listFiles() void {
+pub fn listFiles() ?[][]const u8 {
+    var files = std.ArrayList([]const u8).init(simple_allocator);
     var offset: usize = 0;
 
     while (offset + @sizeOf(Header) <= initrd.len) {
@@ -64,8 +65,7 @@ pub fn listFiles() void {
 
             if (std.mem.eql(u8, name, "TRAILER!!!")) break;
 
-            _ = mini_uart_writer.write(name) catch {};
-            _ = mini_uart_writer.write("\n") catch {};
+            files.appendSlice(&.{name}) catch {};
 
             const file_size = std.fmt.parseInt(u32, header.filesize[0..8], 16) catch 0;
             offset = alignUp(offset + file_size, 4);
@@ -73,9 +73,10 @@ pub fn listFiles() void {
             break;
         }
     }
+    return files.toOwnedSlice() catch null;
 }
 
-pub fn getFileContent(filename: []const u8) void {
+pub fn getFileContent(filename: []const u8) ?[]const u8 {
     var offset: usize = 0;
 
     while (offset + @sizeOf(Header) <= initrd.len) {
@@ -96,8 +97,7 @@ pub fn getFileContent(filename: []const u8) void {
                 const file_size = std.fmt.parseInt(u32, header.filesize[0..8], 16) catch 0;
                 if (offset + file_size > initrd.len) break;
 
-                _ = mini_uart_writer.write(initrd[offset .. offset + file_size]) catch {};
-                break;
+                return initrd[offset .. offset + file_size];
             }
 
             const file_size = std.fmt.parseInt(u32, header.filesize[0..8], 16) catch 0;
@@ -106,4 +106,5 @@ pub fn getFileContent(filename: []const u8) void {
             break;
         }
     }
+    return null;
 }

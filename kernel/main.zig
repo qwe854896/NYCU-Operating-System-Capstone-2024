@@ -14,6 +14,7 @@ const mini_uart_writer = uart.mini_uart_writer;
 pub const std_options: std.Options = .{
     .page_size_min = 0x1000,
     .page_size_max = 0x1000,
+    .logFn = uart.miniUARTLogFn,
 };
 
 const Command = enum {
@@ -76,12 +77,22 @@ fn simpleShell() void {
                 reboot.reset(100);
             },
             Command.ListFiles => {
-                cpio.listFiles();
+                const fs = cpio.listFiles();
+                if (fs) |files| {
+                    for (files) |file| {
+                        _ = mini_uart_writer.print("{s}\n", .{file}) catch {};
+                    }
+                }
             },
             Command.GetFileContent => {
                 _ = mini_uart_writer.write("Filename: ") catch {};
                 recvlen = mini_uart_reader.read(buffer) catch 0;
-                cpio.getFileContent(buffer[0..recvlen]);
+                const c = cpio.getFileContent(buffer[0..recvlen]);
+                if (c) |content| {
+                    _ = mini_uart_writer.print("{s}\n", .{content}) catch {};
+                } else {
+                    std.log.info("No such file", .{});
+                }
             },
             Command.DemoSimpleAlloc => {
                 _ = mini_uart_writer.write("Length of Allocated Memory?: ") catch {};
@@ -106,9 +117,7 @@ fn simpleShell() void {
 }
 
 pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
-    _ = mini_uart_writer.write("\n!KERNEL PANIC!\n") catch {};
-    _ = mini_uart_writer.write(msg) catch {};
-    _ = mini_uart_writer.write("\n") catch {};
+    std.log.err("!KERNEL PANIC!\n{s}", .{msg});
     reboot.reset(100);
     while (true) {}
 }

@@ -1,10 +1,9 @@
 // Reference: https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface
 
+const std = @import("std");
 const mmio = @import("mmio.zig");
-const uart = @import("uart.zig");
 
 const Register = mmio.Register;
-const mini_uart_writer = uart.mini_uart_writer;
 
 const base_address = mmio.base_address + 0xb880;
 
@@ -61,9 +60,9 @@ pub fn getBoardRevision() void {
     mailbox[6] = end_tag;
 
     if (mailbox_call(mailbox[0..])) {
-        _ = mini_uart_writer.print("Board revision: 0x{X}\n", .{mailbox[5]}) catch {};
+        std.log.info("Board revision: 0x{X}", .{mailbox[5]});
     } else {
-        _ = mini_uart_writer.write("Failed to get board revision\n") catch {};
+        std.log.err("Failed to get board revision", .{});
     }
 }
 
@@ -80,9 +79,9 @@ pub fn getArmMemory() void {
     mailbox[7] = end_tag;
 
     if (mailbox_call(mailbox[0..])) {
-        _ = mini_uart_writer.print("ARM Memory Base: 0x{X}\n", .{mailbox[5]}) catch {};
-        _ = mini_uart_writer.print("ARM Memory Size: 0x{X}\n", .{mailbox[6]}) catch {};
+        std.log.info("ARM Memory Base: 0x{X}", .{mailbox[5]});
+        std.log.info("ARM Memory Size: 0x{X}", .{mailbox[6]});
     } else {
-        _ = mini_uart_writer.write("Failed to get arm memory\n") catch {};
+        std.log.err("Failed to get arm memory", .{});
     }
 }

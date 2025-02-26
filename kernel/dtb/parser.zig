@@ -1,8 +1,6 @@
 const std = @import("std");
 const dtb = @import("dtb.zig");
-const uart = @import("../uart.zig");
 const traverser = @import("traverser.zig");
-const mini_uart_writer = uart.mini_uart_writer;
 
 pub const Error = traverser.Error || std.mem.Allocator.Error || error{
     MissingCells,
@@ -229,7 +227,6 @@ fn resolve(allocator: std.mem.Allocator, root: *dtb.Node, current: *dtb.Node) Er
     }
 
     for (current.*.children) |child| {
-        // _ = mini_uart_writer.print("{s} : {s}\n", .{ current.name, child.name }) catch {};
         try resolve(allocator, root, child);
     }
 }
