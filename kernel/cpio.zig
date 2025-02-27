@@ -28,15 +28,13 @@ pub fn initRamfsCallback(dtb_root: *dtb.Node) void {
     var initrd_start_ptr: [*]const u8 = undefined;
     var initrd_end_ptr: [*]const u8 = undefined;
 
-    if (dtb_root.child("chosen")) |chosen_root| {
-        if (chosen_root.prop(dtb.Prop.LinuxInitrdStart)) |prop| {
-            std.log.info("Initrd Start: 0x{X}", .{prop});
-            initrd_start_ptr = @ptrFromInt(prop);
-        }
-        if (chosen_root.prop(dtb.Prop.LinuxInitrdEnd)) |prop| {
-            std.log.info("Initrd End: 0x{X}", .{prop});
-            initrd_end_ptr = @ptrFromInt(prop);
-        }
+    if (dtb_root.propAt(&.{"chosen"}, .LinuxInitrdStart)) |prop| {
+        std.log.info("Initrd Start: 0x{X}", .{prop});
+        initrd_start_ptr = @ptrFromInt(prop);
+    }
+    if (dtb_root.propAt(&.{"chosen"}, .LinuxInitrdEnd)) |prop| {
+        std.log.info("Initrd End: 0x{X}", .{prop});
+        initrd_end_ptr = @ptrFromInt(prop);
     }
 
     const len: usize = @intFromPtr(initrd_end_ptr) - @intFromPtr(initrd_start_ptr);
