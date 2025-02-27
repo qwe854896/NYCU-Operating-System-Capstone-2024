@@ -116,8 +116,19 @@ fn simpleShell() void {
     }
 }
 
-pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
-    std.log.err("!KERNEL PANIC!\n{s}", .{msg});
+pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, _: ?usize) noreturn {
+    std.log.err("!KERNEL PANIC!", .{});
+    std.log.err("{s}", .{msg});
+
+    if (error_return_trace) |trace| {
+        for (trace.instruction_addresses) |address| {
+            if (address == 0) {
+                break;
+            }
+            std.log.err("0x{X}", .{address});
+        }
+    }
+
     reboot.reset(100);
     while (true) {}
 }
