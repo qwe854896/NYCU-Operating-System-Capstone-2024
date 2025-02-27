@@ -153,6 +153,7 @@ comptime {
         \\ .section .text.boot
         \\ .global _start
         \\ _start:
+        \\      bl from_el2_to_el1
         \\      ldr x1, =_stack_top
         \\      mov sp, x1
         \\      ldr x1, =_bss_start
@@ -165,5 +166,14 @@ comptime {
         \\      b 1b
         \\ 2:
         \\      b main
+        \\ from_el2_to_el1:
+        \\      mov x1, #0x00300000 // No trap to all NEON & FP instructions
+        \\      msr cpacr_el1, x1   // References: https://developer.arm.com/documentation/ka006062/latest/
+        \\      mov x1, (1 << 31)
+        \\      msr hcr_el2, x1
+        \\      mov x1, 0x3c5
+        \\      msr spsr_el2, x1
+        \\      msr elr_el2, lr
+        \\      eret
     );
 }
