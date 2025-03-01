@@ -68,6 +68,24 @@ export fn exceptionEntry() void {
     std.log.info("  ESR_EL1: 0x{X}", .{esr_el1});
 }
 
+export fn coreTimerEntry() void {
+    var cntpct_el0: usize = undefined;
+    var cntfrq_el0: usize = undefined;
+
+    asm volatile (
+        \\ mrs %[arg0], cntpct_el0
+        \\ mrs %[arg1], cntfrq_el0
+        \\ mov x0, 2
+        \\ mul x0, x0, %[arg1]
+        \\ msr cntp_tval_el0, x0
+        : [arg0] "=r" (cntpct_el0),
+          [arg1] "=r" (cntfrq_el0),
+    );
+
+    std.log.info("Core Timer Exception!", .{});
+    std.log.info("  {} seconds after booting...", .{cntpct_el0 / cntfrq_el0});
+}
+
 fn execFile(content: []const u8) void {
     const program_stack = simple_allocator.alloc(u8, 0x1000) catch {
         @panic("Out of Memory! No buffer for executing a file.");
@@ -76,7 +94,7 @@ fn execFile(content: []const u8) void {
     const program_stack_address: usize = @intFromPtr(program_stack.ptr);
     _ = mini_uart_writer.print("User program at 0x{X} will be run with the stack address 0x{X}\n", .{ program_start_address, program_stack_address }) catch {};
     asm volatile (
-        \\ mov x1, 0x3c0
+        \\ mov x1, 0x0
         \\ msr spsr_el1, x1
         \\ mov x1, %[arg0]
         \\ msr elr_el1, x1
@@ -209,6 +227,7 @@ comptime {
         \\ .global _start
         \\ _start:
         \\      bl from_el2_to_el1
+        \\      bl core_timer_enable
         \\      ldr x1, =_stack_top
         \\      mov sp, x1
         \\      ldr x1, =_bss_start
@@ -243,6 +262,7 @@ comptime {
         \\      .align 7
         \\      b exception_handler
         \\      .align 7
+        \\
         \\      b exception_handler
         \\      .align 7
         \\      b exception_handler
@@ -251,6 +271,16 @@ comptime {
         \\      .align 7
         \\      b exception_handler
         \\      .align 7
+        \\
+        \\      b exception_handler
+        \\      .align 7
+        \\      b core_timer_handler
+        \\      .align 7
+        \\      b exception_handler
+        \\      .align 7
+        \\      b exception_handler
+        \\      .align 7
+        \\
         \\      b exception_handler
         \\      .align 7
         \\      b exception_handler
@@ -259,14 +289,7 @@ comptime {
         \\      .align 7
         \\      b exception_handler
         \\      .align 7
-        \\      b exception_handler
-        \\      .align 7
-        \\      b exception_handler
-        \\      .align 7
-        \\      b exception_handler
-        \\      .align 7
-        \\      b exception_handler
-        \\      .align 7
+        \\
         \\ .macro save_all
         \\      sub sp, sp, 32 * 8
         \\      stp x0, x1, [sp ,16 * 0]
@@ -308,6 +331,20 @@ comptime {
         \\ exception_handler:
         \\      save_all
         \\      bl exceptionEntry
+        \\      load_all
+        \\      eret
+        \\ core_timer_enable:
+        \\      mov x1, 1
+        \\      msr cntp_ctl_el0, x1 // enable
+        \\      mrs x1, cntfrq_el0
+        \\      msr cntp_tval_el0, x1 // set expired time
+        \\      mov x1, 2
+        \\      ldr x2, =0x40000040 // CORE0_TIMER_IRQ_CTRL
+        \\      str w1, [x2] // unmask timer interrupt
+        \\      ret
+        \\ core_timer_handler:
+        \\      save_all
+        \\      bl coreTimerEntry
         \\      load_all
         \\      eret
     );
