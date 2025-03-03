@@ -19,15 +19,23 @@
       ];
     in
     {
-      devShell = eachSystem (
+      devShells = eachSystem (
         system:
         let
           pkgs = import nixpkgs {
             inherit system;
-            crossSystem.config = "aarch64-linux-gnu";
           };
         in
-        pkgs.callPackage ./env.nix { inherit system pwndbg zig; }
+        {
+          default = pkgs.mkShell {
+            packages = with pkgs; [
+              qemu
+              python312
+              pwndbg.packages.${system}.pwndbg-lldb
+              zig.packages.${system}.master
+            ];
+          };
+        }
       );
     };
 }
