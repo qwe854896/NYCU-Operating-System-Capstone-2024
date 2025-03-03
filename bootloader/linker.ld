@@ -1,12 +1,12 @@
 SECTIONS
 {
-    .text.bootloader 0x40000 : {
-        *(.text.bootloader)
+    .text.bootloader 0x1000 : {
+        KEEP(*(.text.bootloader))
     }
 
     .text.boot : {
         _text_boot_start = .;
-        *(.text.boot)
+        KEEP(*(.text.boot))
     }
 
     .text : {

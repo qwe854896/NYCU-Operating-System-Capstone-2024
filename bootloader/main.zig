@@ -35,9 +35,9 @@ comptime {
     // Avoid using x0 as it stores the address of dtb
     asm (
         \\ .section .text.bootloader
-        \\ .global _start_bootloader
-        \\ _start_bootloader:
-        \\      ldr x1, =_start_bootloader
+        \\ .global _start
+        \\ _start:
+        \\      ldr x1, =_start
         \\      ldr x2, =_bss_start
         \\      ldr x3, =0x80000
         \\ 1:
@@ -50,8 +50,8 @@ comptime {
         \\      ldr x1, =_text_boot_start
         \\      br x1
         \\ .section .text.boot
-        \\ .global _start
-        \\ _start:
+        \\ .global _start_boot
+        \\ _start_boot:
         \\      ldr x1, =_stack_top
         \\      mov sp, x1
         \\      ldr x1, =_bss_start
