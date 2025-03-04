@@ -12,8 +12,6 @@ const mini_uart_reader = uart.mini_uart_reader;
 const mini_uart_writer = uart.mini_uart_writer;
 
 pub const std_options: std.Options = .{
-    .page_size_min = 0x1000,
-    .page_size_max = 0x1000,
     .logFn = uart.miniUARTLogFn,
 };
 
