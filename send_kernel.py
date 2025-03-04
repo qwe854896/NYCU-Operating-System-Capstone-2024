@@ -5,6 +5,7 @@ send_kernel
 
 import sys
 import struct
+import serial
 
 START_BYTE = 0xAC
 
@@ -13,23 +14,28 @@ def send_kernel(tty_path: str, kernel_path: str) -> None:
     """
     send_kernel
     """
-    with open(tty_path, "wb", buffering=0) as tty:
-        with open(kernel_path, "rb") as f:
-            data = f.read()
 
-        size = len(data)
-        print(f"Sending kernel of size {size} bytes")
+    tty = serial.Serial(tty_path, baudrate=115200, timeout=1)
 
-        # Send start byte
-        tty.write(bytes([START_BYTE]))
+    with open(kernel_path, "rb") as f:
+        data = f.read()
 
-        # Send size as 4 bytes (little-endian)
-        tty.write(struct.pack("<I", size))
+    size = len(data)
+    print(f"Sending kernel of size {size} bytes")
 
-        # Send the kernel binary data
-        tty.write(data)
+    # Send start byte
+    tty.write(bytes([START_BYTE]))
+    tty.flush()
 
-        print("Kernel sent successfully.")
+    # Send size as 4 bytes (little-endian)
+    tty.write(struct.pack("<I", size))
+    tty.flush()
+
+    # Send the kernel binary data
+    tty.write(data)
+    tty.flush()
+
+    print("Kernel sent successfully.")
 
 
 if __name__ == "__main__":

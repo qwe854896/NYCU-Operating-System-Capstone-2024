@@ -60,6 +60,7 @@
             packages = with pkgs; [
               qemu
               python312
+              python312Packages.pyserial
               pwndbg.packages.${system}.pwndbg-lldb
               zig-overlay.packages.${system}.master
               nixvimExtended.config.build.package
