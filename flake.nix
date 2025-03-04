@@ -47,6 +47,7 @@
           nixvimExtended = nixvim.nixvimConfigurations.${system}.nixvim.extendModules {
             modules = [
               {
+                colorschemes.catppuccin.enable = true;
                 plugins.lsp.servers.zls = {
                   enable = true;
                   package = zls.packages.${system}.default;
