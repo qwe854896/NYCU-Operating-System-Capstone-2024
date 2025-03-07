@@ -62,7 +62,7 @@
               qemu
               python312
               python312Packages.pyserial
-              pwndbg.packages.${system}.pwndbg-lldb
+              pwndbg.packages.${system}.default
               zig-overlay.packages.${system}.master
               nixvimExtended.config.build.package
             ];
