@@ -34,7 +34,7 @@ export fn main(dtb_address: usize) usize {
 comptime {
     // Avoid using x0 as it stores the address of dtb
     asm (
-        \\ .section .text.bootloader
+        \\ .section .text.boot
         \\ .global _start
         \\ _start:
         \\      ldr x1, =_start
@@ -47,11 +47,9 @@ comptime {
         \\      str x4, [x1], #8
         \\      b 1b
         \\ 2:
-        \\      ldr x1, =_text_boot_start
+        \\      ldr x1, =_init
         \\      br x1
-        \\ .section .text.boot
-        \\ .global _start_boot
-        \\ _start_boot:
+        \\ _init:
         \\      ldr x1, =_stack_top
         \\      mov sp, x1
         \\      ldr x1, =_bss_start

@@ -1,21 +1,21 @@
 SECTIONS
 {
-    .text.bootloader 0x1000 : {
-        KEEP(*(.text.bootloader))
-    }
-
-    .text.boot : {
-        _text_boot_start = .;
+    .text.boot 0x1000 : {
         KEEP(*(.text.boot))
     }
 
     .text : {
         *(.text)
+        *(.text.*)
     }
 
     .rodata : {
         *(.rodata)
+        *(.rodata.*)
     }
+
+    .eh_frame_hdr : { *(.eh_frame_hdr) }
+    .eh_frame : { *(.eh_frame) }
 
     .data : {
         *(.data)
@@ -24,7 +24,6 @@ SECTIONS
     .bss (NOLOAD) : {
         _bss_start = .;
         *(.bss)
-        *(COMMON)
         _bss_end = .;
     }
 
