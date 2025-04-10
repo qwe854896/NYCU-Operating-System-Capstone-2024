@@ -13,6 +13,7 @@ const mini_uart_reader = uart.mini_uart_reader;
 const mini_uart_writer = uart.mini_uart_writer;
 
 pub const std_options: std.Options = .{
+    .log_level = .info,
     .logFn = uart.miniUARTLogFn,
 };
 
