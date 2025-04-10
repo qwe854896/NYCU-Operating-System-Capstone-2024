@@ -44,6 +44,8 @@ export fn coreTimerEntry() void {
         \\ msr cntp_tval_el0, x0
         : [arg0] "=r" (cntpct_el0),
           [arg1] "=r" (cntfrq_el0),
+        :
+        : "x0"
     );
 
     std.log.info("Core Timer Exception!", .{});

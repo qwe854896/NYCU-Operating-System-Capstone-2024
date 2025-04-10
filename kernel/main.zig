@@ -65,6 +65,7 @@ fn execFile(content: []const u8) void {
         :
         : [arg0] "r" (program_start_address),
           [arg1] "r" (program_stack_address),
+        : "x1"
     );
 }
 
