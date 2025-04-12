@@ -108,7 +108,7 @@ pub fn miniUARTLogFn(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    _ = scope;
-    const prefix = "[" ++ comptime level.asText() ++ "] ";
-    nosuspend mini_uart_writer.print(prefix ++ format ++ "\n", args) catch return;
+    const level_txt = comptime level.asText();
+    const prefix2 = if (scope == .default) ": " else "(" ++ @tagName(scope) ++ "): ";
+    nosuspend mini_uart_writer.print(level_txt ++ prefix2 ++ format ++ "\n", args) catch return;
 }
