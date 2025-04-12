@@ -164,7 +164,7 @@ pub fn Buddy(comptime config: Config) type {
             self.setLongest(index, @max(self.getLongest(left(index)), self.getLongest(right(index))));
         }
 
-        fn backward(self: *const Self, offset: usize) usize {
+        pub fn backward(self: *const Self, offset: usize) usize {
             assert(offset < self.getLen());
             var index = offset + self.getLen() - 1; // start from leaf node
             while (self.getLongest(index) != 0) {
@@ -221,7 +221,7 @@ pub fn Buddy(comptime config: Config) type {
             return ((index + 1) >> 1) - 1;
         }
 
-        inline fn indexToSize(self: *const Self, index: usize) usize {
+        pub inline fn indexToSize(self: *const Self, index: usize) usize {
             return self.getLen() >> log2_int(usize, index + 1);
         }
 

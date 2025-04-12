@@ -7,10 +7,13 @@ const cpio = @import("cpio.zig");
 const allocator = @import("allocator.zig");
 const dtb = @import("dtb/main.zig");
 const interrupt = @import("interrupt.zig");
+const frame_allocator = @import("frame_allocator.zig");
 
 const simple_allocator = allocator.simple_allocator;
 const mini_uart_reader = uart.mini_uart_reader;
 const mini_uart_writer = uart.mini_uart_writer;
+
+const FrameAllocator = frame_allocator.FrameAllocator(.{ .verbose_log = true });
 
 pub const std_options: std.Options = .{
     .log_level = .info,
@@ -26,6 +29,8 @@ const Command = enum {
     GetFileContent,
     DemoSimpleAlloc,
     ExecFileContent,
+    DemoPageAlloc,
+    DemoPageFree,
 };
 
 fn parseCommand(command: []const u8) Command {
@@ -43,6 +48,10 @@ fn parseCommand(command: []const u8) Command {
         return Command.DemoSimpleAlloc;
     } else if (std.mem.eql(u8, command, "exec")) {
         return Command.ExecFileContent;
+    } else if (std.mem.eql(u8, command, "alloc")) {
+        return Command.DemoPageAlloc;
+    } else if (std.mem.eql(u8, command, "free")) {
+        return Command.DemoPageFree;
     } else {
         return Command.None;
     }
@@ -70,7 +79,7 @@ fn execFile(content: []const u8) void {
     );
 }
 
-fn simpleShell() void {
+fn simpleShell(page_allocator: std.mem.Allocator) void {
     var buffer = simple_allocator.alloc(u8, 256) catch {
         @panic("Out of Memory! No buffer for simple shell.");
     };
@@ -93,6 +102,8 @@ fn simpleShell() void {
                 _ = mini_uart_writer.write("  cat - Print the content of a file in the initramfs\n") catch {};
                 _ = mini_uart_writer.write("  demo - Run a simple allocator demo\n") catch {};
                 _ = mini_uart_writer.write("  exec - Execute a file in the initramfs\n") catch {};
+                _ = mini_uart_writer.write("  alloc - Run a page allocator demo\n") catch {};
+                _ = mini_uart_writer.write("  free - Run a page free demo\n") catch {};
             },
             Command.None => {
                 _ = mini_uart_writer.write("Unknown command: ") catch {};
@@ -148,6 +159,28 @@ fn simpleShell() void {
                     std.log.info("No such file", .{});
                 }
             },
+            Command.DemoPageAlloc => {
+                _ = mini_uart_writer.write("Length of Allocated Memory?: ") catch {};
+                recvlen = mini_uart_reader.read(buffer) catch 0;
+
+                const name_size = std.fmt.parseInt(u32, buffer[0..recvlen], 10) catch 0;
+                const demo_buffer: []u8 align(8192) = page_allocator.alloc(u8, name_size) catch {
+                    _ = mini_uart_writer.write("Allocation failed\n") catch {};
+                    continue;
+                };
+
+                _ = mini_uart_writer.print("Buffer Address: 0x{X}\n", .{@intFromPtr(demo_buffer.ptr)}) catch {};
+            },
+            Command.DemoPageFree => {
+                _ = mini_uart_writer.write("Address of Allocated Memory?: ") catch {};
+                recvlen = mini_uart_reader.read(buffer) catch 0;
+
+                const address = std.fmt.parseInt(usize, buffer[2..recvlen], 16) catch 0;
+                const ptr: [*]const u8 = @ptrFromInt(address);
+                page_allocator.free(ptr[0..1]);
+
+                _ = mini_uart_writer.print("Freed memory at address: 0x{X}\n", .{address}) catch {};
+            },
         }
     }
 }
@@ -196,7 +229,17 @@ export fn main(dtb_address: usize) void {
     std.log.info("DTB Address: 0x{X}", .{dtb_address});
     std.log.info("DTB Size: 0x{X}", .{dtb_size});
 
-    simpleShell();
+    const mem: []allowzero u8 = @as([*]allowzero u8, @ptrFromInt(arm_memory.@"0"))[0..arm_memory.@"1"];
+    var fa = FrameAllocator.init(mem);
+
+    fa.memory_reserve(0x0000, 0x1000); // spin tables
+    fa.memory_reserve(@intFromPtr(&_flash_img_start), @intFromPtr(&_flash_img_end));
+    fa.memory_reserve(initrd_start_ptr, initrd_end_ptr);
+    fa.memory_reserve(dtb_address, dtb_address + dtb_size);
+
+    const page_allocator = fa.allocator();
+
+    simpleShell(page_allocator);
 }
 
 extern const _flash_img_start: u32;
