@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = std.log.scoped(.buddy);
 const assert = std.debug.assert;
 const isPowerOfTwo = std.math.isPowerOfTwo;
 const log2_int = std.math.log2_int;
@@ -34,6 +35,9 @@ pub const Buddy = struct {
             }
             self.setLongest(i, node_size);
         }
+
+        log.info("Add page 0x{X} to order {}.", .{ 0, self.log_len });
+
         return self;
     }
 
@@ -47,6 +51,11 @@ pub const Buddy = struct {
         var index: usize = 0;
         var node_size = self.getLen();
         while (node_size != new_len) : (node_size >>= 1) {
+            if (self.getLongest(index) == node_size) {
+                log.info("Remove page 0x{X} from order {}.", .{ self.indexToOffset(index), log2_int(usize, node_size) });
+                log.info("Add page 0x{X} to order {}.", .{ self.indexToOffset(left(index)), log2_int(usize, node_size >> 1) });
+                log.info("Add page 0x{X} to order {}.", .{ self.indexToOffset(right(index)), log2_int(usize, node_size >> 1) });
+            }
             const left_longest = self.getLongest(left(index));
             const right_longest = self.getLongest(right(index));
             if (left_longest >= new_len and (right_longest < new_len or right_longest >= left_longest)) {
@@ -59,6 +68,9 @@ pub const Buddy = struct {
         self.setLongest(index, 0);
 
         const offset = (index + 1) * node_size - self.getLen();
+
+        log.info("Remove page 0x{X} from order {}.", .{ offset, log2_int(usize, node_size) });
+        log.info("Allocate page 0x{X} at order {}.", .{ offset, log2_int(usize, node_size) });
 
         while (index != 0) {
             index = parent(index);
@@ -82,6 +94,9 @@ pub const Buddy = struct {
         }
         self.setLongest(index, node_size);
 
+        log.info("Free page 0x{X} at order {}.", .{ offset, log2_int(usize, node_size) });
+        log.info("Add page 0x{X} to order {}.", .{ offset, log2_int(usize, node_size) });
+
         while (index != 0) {
             index = parent(index);
             node_size <<= 1;
@@ -91,6 +106,9 @@ pub const Buddy = struct {
 
             if (left_longest + right_longest == node_size) {
                 self.setLongest(index, node_size);
+                log.info("Remove page 0x{X} from order {}.", .{ self.indexToOffset(left(index)), log2_int(usize, node_size >> 1) });
+                log.info("Remove page 0x{X} from order {}.", .{ self.indexToOffset(right(index)), log2_int(usize, node_size >> 1) });
+                log.info("Add page 0x{X} to order {}.", .{ self.indexToOffset(index), log2_int(usize, node_size) });
             } else {
                 self.setLongest(index, @max(left_longest, right_longest));
             }
