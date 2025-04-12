@@ -1,6 +1,9 @@
 SECTIONS
 {
-    .text.boot 0x80000 : {
+    . = 0x80000;
+    _flash_img_start = .;
+
+    .text.boot : {
         KEEP(*(.text.boot))
     }
 
@@ -30,5 +33,7 @@ SECTIONS
 
     . = ALIGN(16);
     _stack_top = . + 0x8000; /* Reserve 32KB for stack */
+
+    _flash_img_end = _stack_top;
 }
 

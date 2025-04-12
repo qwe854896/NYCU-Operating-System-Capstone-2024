@@ -199,6 +199,9 @@ export fn main(dtb_address: usize) void {
     simpleShell();
 }
 
+extern const _flash_img_start: u32;
+extern const _flash_img_end: u32;
+
 comptime {
     // Avoid using x0 as it stores the address of dtb
     asm (
