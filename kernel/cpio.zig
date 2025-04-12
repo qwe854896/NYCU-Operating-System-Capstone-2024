@@ -1,6 +1,8 @@
 const std = @import("std");
 const dtb = @import("dtb/main.zig");
 
+var initrd_start_ptr: [*]const u8 = undefined;
+var initrd_end_ptr: [*]const u8 = undefined;
 var initrd: []const u8 = undefined;
 
 const Header = extern struct {
@@ -25,20 +27,23 @@ fn alignUp(value: usize, size: usize) usize {
 }
 
 pub fn initRamfsCallback(dtb_root: *dtb.Node) void {
-    var initrd_start_ptr: [*]const u8 = undefined;
-    var initrd_end_ptr: [*]const u8 = undefined;
-
     if (dtb_root.propAt(&.{"chosen"}, .LinuxInitrdStart)) |prop| {
-        std.log.info("Initrd Start: 0x{X}", .{prop});
         initrd_start_ptr = @ptrFromInt(prop);
     }
     if (dtb_root.propAt(&.{"chosen"}, .LinuxInitrdEnd)) |prop| {
-        std.log.info("Initrd End: 0x{X}", .{prop});
         initrd_end_ptr = @ptrFromInt(prop);
     }
 
     const len: usize = @intFromPtr(initrd_end_ptr) - @intFromPtr(initrd_start_ptr);
     initrd = initrd_start_ptr[0..len];
+}
+
+pub fn getInitrdStartPtr() usize {
+    return @intFromPtr(initrd_start_ptr);
+}
+
+pub fn getInitrdEndPtr() usize {
+    return @intFromPtr(initrd_end_ptr);
 }
 
 pub fn listFiles(allocator: std.mem.Allocator) ?[][]const u8 {

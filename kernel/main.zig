@@ -175,11 +175,26 @@ export fn main(dtb_address: usize) void {
     uart.init();
     interrupt.init();
 
-    mailbox.getBoardRevision();
-    mailbox.getArmMemory();
+    const board_revision = mailbox.getBoardRevision() catch {
+        @panic("Cannot obtain board revision from mailbox.");
+    };
+    const arm_memory = mailbox.getArmMemory() catch {
+        @panic("Cannot obtain ARM memory information from mailbox.");
+    };
 
-    dtb.init(simple_allocator, dtb_address);
+    const dtb_size = dtb.init(simple_allocator, dtb_address);
     dtb.fdtTraverse(cpio.initRamfsCallback);
+
+    const initrd_start_ptr = cpio.getInitrdStartPtr();
+    const initrd_end_ptr = cpio.getInitrdEndPtr();
+
+    std.log.info("Board revision: 0x{X}", .{board_revision});
+    std.log.info("ARM Memory Base: 0x{X}", .{arm_memory.@"0"});
+    std.log.info("ARM Memory Size: 0x{X}", .{arm_memory.@"1"});
+    std.log.info("Initrd Start: 0x{X}", .{initrd_start_ptr});
+    std.log.info("Initrd End: 0x{X}", .{initrd_end_ptr});
+    std.log.info("DTB Address: 0x{X}", .{dtb_address});
+    std.log.info("DTB Size: 0x{X}", .{dtb_size});
 
     simpleShell();
 }

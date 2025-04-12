@@ -23,6 +23,10 @@ const end_tag = 0x00000000;
 const get_board_revision = 0x00010002;
 const get_arm_memory = 0x00010005;
 
+const MailboxError = error{
+    RequestFailed,
+};
+
 fn mailbox_call(mailbox: []u32) bool {
     // Combine the message address (upper 28 bits) with channel number (lower 4 bits)
     const addr = @as(u32, @intCast(@intFromPtr(mailbox.ptr))) & ~@as(u32, 0xF);
@@ -48,7 +52,7 @@ fn mailbox_call(mailbox: []u32) bool {
     return resp == message;
 }
 
-pub fn getBoardRevision() void {
+pub fn getBoardRevision() MailboxError!u32 {
     var mailbox: [7]u32 align(16) = undefined;
 
     mailbox[0] = 7 * 4; // buffer size in bytes
@@ -59,14 +63,14 @@ pub fn getBoardRevision() void {
     mailbox[5] = 0; // value buffer
     mailbox[6] = end_tag;
 
-    if (mailbox_call(mailbox[0..])) {
-        std.log.info("Board revision: 0x{X}", .{mailbox[5]});
-    } else {
-        std.log.err("Failed to get board revision", .{});
+    if (!mailbox_call(mailbox[0..])) {
+        return MailboxError.RequestFailed;
     }
+
+    return mailbox[5];
 }
 
-pub fn getArmMemory() void {
+pub fn getArmMemory() MailboxError!struct { u32, u32 } {
     var mailbox: [8]u32 align(16) = undefined;
 
     mailbox[0] = 8 * 4; // buffer size in bytes
@@ -78,10 +82,9 @@ pub fn getArmMemory() void {
     mailbox[6] = 0; // value buffer
     mailbox[7] = end_tag;
 
-    if (mailbox_call(mailbox[0..])) {
-        std.log.info("ARM Memory Base: 0x{X}", .{mailbox[5]});
-        std.log.info("ARM Memory Size: 0x{X}", .{mailbox[6]});
-    } else {
-        std.log.err("Failed to get arm memory", .{});
+    if (!mailbox_call(mailbox[0..])) {
+        return MailboxError.RequestFailed;
     }
+
+    return .{ mailbox[5], mailbox[6] };
 }
