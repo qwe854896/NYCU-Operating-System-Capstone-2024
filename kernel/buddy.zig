@@ -119,6 +119,34 @@ pub const Buddy = struct {
         return self.indexToSize(self.backward(offset));
     }
 
+    pub fn reserve(self: *Self, start_offset: usize, end_offset: usize) void {
+        log.info("Reserve pages: [0x{X}, 0x{X}).", .{ start_offset, end_offset });
+        self.recursive_reserve(0, 0, self.getLen(), start_offset, end_offset);
+    }
+
+    fn recursive_reserve(self: *Self, index: usize, left_offset: usize, right_offset: usize, start_offset: usize, end_offset: usize) void {
+        if (right_offset <= start_offset or end_offset <= left_offset) {
+            return;
+        }
+        if (start_offset <= left_offset and right_offset <= end_offset) {
+            self.setLongest(index, 0);
+            log.info("Remove page 0x{X} from order {}.", .{ self.indexToOffset(index), log2_int(usize, right_offset - left_offset) });
+            return;
+        }
+
+        if (self.getLongest(index) == right_offset - left_offset) {
+            log.info("Remove page 0x{X} from order {}.", .{ self.indexToOffset(index), log2_int(usize, right_offset - left_offset) });
+            log.info("Add page 0x{X} to order {}.", .{ self.indexToOffset(left(index)), log2_int(usize, (right_offset - left_offset) >> 1) });
+            log.info("Add page 0x{X} to order {}.", .{ self.indexToOffset(right(index)), log2_int(usize, (right_offset - left_offset) >> 1) });
+        }
+
+        const middle_offset = (left_offset + right_offset) >> 1;
+        self.recursive_reserve(left(index), left_offset, middle_offset, start_offset, end_offset);
+        self.recursive_reserve(right(index), middle_offset, right_offset, start_offset, end_offset);
+
+        self.setLongest(index, @max(self.getLongest(left(index)), self.getLongest(right(index))));
+    }
+
     fn backward(self: *const Self, offset: usize) usize {
         assert(offset < self.getLen());
         var index = offset + self.getLen() - 1; // start from leaf node
