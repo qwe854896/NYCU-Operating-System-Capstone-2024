@@ -71,14 +71,9 @@ pub fn DynamicAllocator(comptime config: Config) type {
             }
 
             const slab = self.page_allocator.rawAlloc(slab_len, .fromByteUnits(slab_len), ra) orelse return null;
+            self.next_addrs[class] = @intFromPtr(slab) + slot_size;
 
-            // Use first slot to store class
-            const slab_class: *usize = @ptrFromInt(@intFromPtr(slab));
-            slab_class.* = class;
-
-            self.next_addrs[class] = @intFromPtr(slab) + (slot_size << 1);
-
-            return @ptrFromInt(@intFromPtr(slab) + slot_size);
+            return slab;
         }
 
         fn free(context: *anyopaque, memory: []u8, alignment: mem.Alignment, return_address: usize) void {
