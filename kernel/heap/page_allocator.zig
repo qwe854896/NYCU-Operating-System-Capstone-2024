@@ -1,16 +1,14 @@
 const std = @import("std");
 const buddy = @import("buddy.zig");
-
 const mem = std.mem;
 const Buddy = buddy.Buddy;
+const assert = std.debug.assert;
 
 var buffer: [0x1000000]u8 = undefined;
 var fba = std.heap.FixedBufferAllocator.init(&buffer);
 pub const startup_allocator = fba.allocator();
 
-const page_size = 0x1000;
-const page_mask = page_size - 1;
-const page_shift = 12;
+const log2_page_size = 12;
 
 fn fixUp(len: usize) usize {
     if (len == 0) {
@@ -30,7 +28,7 @@ const Config = struct {
     verbose_log: bool = false,
 };
 
-pub fn FrameAllocator(comptime config: Config) type {
+pub fn PageAllocator(comptime config: Config) type {
     return struct {
         const Self = @This();
         const ConfiguredBuddy = Buddy(.{ .verbose_log = config.verbose_log });
@@ -40,7 +38,7 @@ pub fn FrameAllocator(comptime config: Config) type {
 
         pub fn init(bytes: []allowzero u8) Self {
             const fix_len = fixUp(bytes.len);
-            const num_of_pages = fix_len >> page_shift;
+            const num_of_pages = fix_len >> log2_page_size;
             const ctx_len = num_of_pages << 1;
 
             var ctx = startup_allocator.alloc(u8, ctx_len) catch {
@@ -58,46 +56,48 @@ pub fn FrameAllocator(comptime config: Config) type {
             return self;
         }
 
+        pub fn memory_reserve(self: *Self, start: usize, end: usize) void {
+            const start_index = start >> log2_page_size;
+            const end_index = mem.alignForwardLog2(end, log2_page_size) >> log2_page_size;
+            self.manager.reserve(start_index, end_index);
+        }
+
         pub fn allocator(self: *Self) mem.Allocator {
             return .{
                 .ptr = self,
                 .vtable = &.{
                     .alloc = alloc,
-                    .resize = resize,
                     .free = free,
+                    .resize = resize,
                     .remap = remap,
                 },
             };
         }
 
-        pub fn memory_reserve(self: *Self, start: usize, end: usize) void {
-            const start_index = start >> page_shift;
-            const end_index = (end + page_mask) >> page_shift;
-            self.manager.reserve(start_index, end_index);
+        fn alloc(context: *anyopaque, n: usize, alignment: mem.Alignment, ra: usize) ?[*]u8 {
+            _ = ra;
+            assert(n > 0);
+            const self: *Self = @ptrCast(@alignCast(context));
+            const alignment_bytes = alignment.toByteUnits();
+            const aligned_len = mem.alignForwardLog2(n, log2_page_size);
+            const offset = self.manager.alloc(@max(aligned_len, alignment_bytes) >> log2_page_size) orelse return null;
+            const array: [*]u8 = @ptrFromInt(@intFromPtr(self.bytes.ptr) + (offset << log2_page_size));
+            const result_ptr = mem.alignPointer(array, alignment_bytes) orelse return null;
+            return result_ptr;
         }
 
-        fn alloc(ctx: *anyopaque, len: usize, alignment: mem.Alignment, ret_addr: usize) ?[*]u8 {
+        fn free(context: *anyopaque, memory: []u8, alignment: mem.Alignment, return_address: usize) void {
             _ = alignment;
-            _ = ret_addr;
-            const self: *Self = @ptrCast(@alignCast(ctx));
-            const num_of_pages = (len + page_mask) >> page_shift;
-            const offset = self.manager.alloc(num_of_pages) orelse return null;
-            return @ptrFromInt(@intFromPtr(self.bytes.ptr) + (offset << page_shift));
+            _ = return_address;
+            const self: *Self = @ptrCast(@alignCast(context));
+            self.manager.free((@intFromPtr(memory.ptr) - @intFromPtr(self.bytes.ptr)) >> log2_page_size);
         }
 
-        fn resize(ctx: *anyopaque, buf: []u8, alignment: mem.Alignment, new_len: usize, ret_addr: usize) bool {
+        fn resize(context: *anyopaque, memory: []u8, alignment: mem.Alignment, new_len: usize, return_address: usize) bool {
             _ = alignment;
-            _ = ret_addr;
-            const self: *Self = @ptrCast(@alignCast(ctx));
-            const ok = new_len <= self.allocSize(buf.ptr);
-            return ok;
-        }
-
-        fn free(ctx: *anyopaque, buf: []u8, alignment: mem.Alignment, ret_addr: usize) void {
-            _ = alignment;
-            _ = ret_addr;
-            const self: *Self = @ptrCast(@alignCast(ctx));
-            self.manager.free((@intFromPtr(buf.ptr) - @intFromPtr(self.bytes.ptr)) >> page_shift);
+            _ = return_address;
+            const self: *Self = @ptrCast(@alignCast(context));
+            return new_len <= self.allocSize(memory.ptr);
         }
 
         fn remap(context: *anyopaque, memory: []u8, alignment: mem.Alignment, new_len: usize, return_address: usize) ?[*]u8 {

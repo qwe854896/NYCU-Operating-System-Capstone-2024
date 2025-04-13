@@ -6,13 +6,13 @@ const reboot = @import("reboot.zig");
 const cpio = @import("cpio.zig");
 const dtb = @import("dtb/main.zig");
 const interrupt = @import("interrupt.zig");
-const frame_allocator = @import("heap/frame_allocator.zig");
+const page_allocator = @import("heap/page_allocator.zig");
 
-const startup_allocator = frame_allocator.startup_allocator;
+const startup_allocator = page_allocator.startup_allocator;
 const mini_uart_reader = uart.mini_uart_reader;
 const mini_uart_writer = uart.mini_uart_writer;
 
-const FrameAllocator = frame_allocator.FrameAllocator(.{ .verbose_log = true });
+const PageAllocator = page_allocator.PageAllocator(.{ .verbose_log = true });
 
 pub const std_options: std.Options = .{
     .log_level = .info,
@@ -163,7 +163,7 @@ fn simpleShell(allocator: std.mem.Allocator) void {
                 recvlen = mini_uart_reader.read(buffer) catch 0;
 
                 const name_size = std.fmt.parseInt(u32, buffer[0..recvlen], 10) catch 0;
-                const demo_buffer: []u8 align(8192) = allocator.alloc(u8, name_size) catch {
+                const demo_buffer: []u8 = allocator.alloc(u8, name_size) catch {
                     _ = mini_uart_writer.write("Allocation failed\n") catch {};
                     continue;
                 };
@@ -229,7 +229,7 @@ export fn main(dtb_address: usize) void {
     std.log.info("DTB Size: 0x{X}", .{dtb_size});
 
     const mem: []allowzero u8 = @as([*]allowzero u8, @ptrFromInt(arm_memory.@"0"))[0..arm_memory.@"1"];
-    var fa = FrameAllocator.init(mem);
+    var fa = PageAllocator.init(mem);
 
     fa.memory_reserve(0x0000, 0x1000); // spin tables
     fa.memory_reserve(@intFromPtr(&_flash_img_start), @intFromPtr(&_flash_img_end));
