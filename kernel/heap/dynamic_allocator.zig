@@ -54,7 +54,7 @@ pub fn DynamicAllocator(comptime config: Config) type {
             assert(slab_len % slot_size == 0);
 
             if (config.verbose_log) {
-                log.info("allocating class {d} size {d}", .{ class, n });
+                log.info("Allocate at chunk size {d}.", .{slot_size});
             }
 
             const top_free_ptr = self.frees[class];
@@ -88,12 +88,12 @@ pub fn DynamicAllocator(comptime config: Config) type {
 
             const class = sizeClassIndex(memory.len, alignment);
 
-            if (config.verbose_log) {
-                log.info("freeing class {d} size {d}", .{ class, memory.len });
-            }
-
             if (class >= size_class_count) {
                 return self.page_allocator.free(memory);
+            }
+
+            if (config.verbose_log) {
+                log.info("Free at chunk size {d}.", .{slotSize(class)});
             }
 
             const node: *usize = @alignCast(@ptrCast(memory.ptr));

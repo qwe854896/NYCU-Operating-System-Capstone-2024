@@ -78,7 +78,6 @@ pub fn Buddy(comptime config: Config) type {
 
             if (config.verbose_log) {
                 log.info("Remove page 0x{X} from order {}.", .{ offset, log2_int(usize, node_size) });
-                log.info("Allocate page 0x{X} at order {}.", .{ offset, log2_int(usize, node_size) });
             }
 
             while (index != 0) {
@@ -104,7 +103,6 @@ pub fn Buddy(comptime config: Config) type {
             self.setLongest(index, node_size);
 
             if (config.verbose_log) {
-                log.info("Free page 0x{X} at order {}.", .{ offset, log2_int(usize, node_size) });
                 log.info("Add page 0x{X} to order {}.", .{ offset, log2_int(usize, node_size) });
             }
 

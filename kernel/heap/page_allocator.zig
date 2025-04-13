@@ -1,5 +1,6 @@
 const std = @import("std");
 const buddy = @import("buddy.zig");
+const log = std.log.scoped(.page);
 const mem = std.mem;
 const Buddy = buddy.Buddy;
 const assert = std.debug.assert;
@@ -84,6 +85,9 @@ pub fn PageAllocator(comptime config: Config) type {
             const offset = self.manager.alloc(@max(aligned_len, alignment_bytes) >> log2_page_size) orelse return null;
             const array: [*]u8 = @ptrFromInt(@intFromPtr(self.bytes.ptr) + (offset << log2_page_size));
             const result_ptr = mem.alignPointer(array, alignment_bytes) orelse return null;
+            if (config.verbose_log) {
+                log.info("Allocate 0x{X}.", .{@intFromPtr(result_ptr)});
+            }
             return result_ptr;
         }
 
@@ -91,6 +95,9 @@ pub fn PageAllocator(comptime config: Config) type {
             _ = alignment;
             _ = return_address;
             const self: *Self = @ptrCast(@alignCast(context));
+            if (config.verbose_log) {
+                log.info("Free page 0x{X}.", .{@intFromPtr(memory.ptr)});
+            }
             self.manager.free((@intFromPtr(memory.ptr) - @intFromPtr(self.bytes.ptr)) >> log2_page_size);
         }
 
