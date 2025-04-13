@@ -88,6 +88,7 @@ pub fn PageAllocator(comptime config: Config) type {
             const result_ptr = mem.alignPointer(array, alignment_bytes) orelse return null;
             if (config.verbose_log) {
                 log.info("Allocate 0x{X} at order {}, page 0x{X}.", .{ @intFromPtr(result_ptr), log2_int(usize, fixUp(aligned_len)) - log2_page_size, @intFromPtr(result_ptr) >> log2_page_size });
+                log.info("\n{}", .{self.manager});
             }
             return result_ptr;
         }
@@ -100,6 +101,9 @@ pub fn PageAllocator(comptime config: Config) type {
                 log.info("Free 0x{X} at order {}, page 0x{X}.", .{ @intFromPtr(memory.ptr), log2_int(usize, fixUp(memory.len)) - log2_page_size, @intFromPtr(memory.ptr) >> log2_page_size });
             }
             self.manager.free((@intFromPtr(memory.ptr) - @intFromPtr(self.bytes.ptr)) >> log2_page_size);
+            if (config.verbose_log) {
+                log.info("\n{}", .{self.manager});
+            }
         }
 
         fn resize(context: *anyopaque, memory: []u8, alignment: mem.Alignment, new_len: usize, return_address: usize) bool {

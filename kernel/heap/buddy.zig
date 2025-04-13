@@ -226,6 +226,29 @@ pub fn Buddy(comptime config: Config) type {
         inline fn indexToOffset(self: *const Self, index: usize) usize {
             return (index + 1) * self.indexToSize(index) - self.getLen();
         }
+
+        pub fn format(self: *const Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+            _ = fmt;
+            _ = options;
+
+            const len = self.getLen();
+
+            var node_size = len << 1;
+            var log_len = self.log_len + 1;
+
+            var count: usize = 0;
+            for (0..(len << 1) - 1) |i| {
+                if (isPowerOfTwo(i + 1)) {
+                    node_size >>= 1;
+                    log_len -= 1;
+                }
+                count += @as(usize, @intCast(@as(u1, @bitCast(self.getLongest(i) == node_size and self.getLongest(((i + 1) ^ 1) - 1) != node_size))));
+                if (isPowerOfTwo(i + 2)) {
+                    try std.fmt.format(writer, "Order {}: {} blocks\n", .{ log_len, count });
+                    count = 0;
+                }
+            }
+        }
     };
 }
 
