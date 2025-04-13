@@ -8,6 +8,10 @@ var buffer: [0x1000000]u8 = undefined;
 var fba = std.heap.FixedBufferAllocator.init(&buffer);
 pub const startup_allocator = fba.allocator();
 
+const page_size = 0x1000;
+const page_mask = page_size - 1;
+const page_shift = 12;
+
 fn fixUp(len: usize) usize {
     if (len == 0) {
         return 1;
@@ -36,7 +40,7 @@ pub fn FrameAllocator(comptime config: Config) type {
 
         pub fn init(bytes: []allowzero u8) Self {
             const fix_len = fixUp(bytes.len);
-            const num_of_pages = fix_len >> 12;
+            const num_of_pages = fix_len >> page_shift;
             const ctx_len = num_of_pages << 1;
 
             var ctx = startup_allocator.alloc(u8, ctx_len) catch {
@@ -67,8 +71,8 @@ pub fn FrameAllocator(comptime config: Config) type {
         }
 
         pub fn memory_reserve(self: *Self, start: usize, end: usize) void {
-            const start_index = start >> 12;
-            const end_index = (end + 0xFFF) >> 12;
+            const start_index = start >> page_shift;
+            const end_index = (end + page_mask) >> page_shift;
             self.manager.reserve(start_index, end_index);
         }
 
@@ -76,9 +80,9 @@ pub fn FrameAllocator(comptime config: Config) type {
             _ = alignment;
             _ = ret_addr;
             const self: *Self = @ptrCast(@alignCast(ctx));
-            const num_of_pages = (len + 0xFFF) >> 12;
+            const num_of_pages = (len + page_mask) >> page_shift;
             const offset = self.manager.alloc(num_of_pages) orelse return null;
-            return @ptrFromInt(@intFromPtr(self.bytes.ptr) + (offset << 12));
+            return @ptrFromInt(@intFromPtr(self.bytes.ptr) + (offset << page_shift));
         }
 
         fn resize(ctx: *anyopaque, buf: []u8, alignment: mem.Alignment, new_len: usize, ret_addr: usize) bool {
@@ -93,7 +97,7 @@ pub fn FrameAllocator(comptime config: Config) type {
             _ = alignment;
             _ = ret_addr;
             const self: *Self = @ptrCast(@alignCast(ctx));
-            self.manager.free((@intFromPtr(buf.ptr) - @intFromPtr(self.bytes.ptr)) >> 12);
+            self.manager.free((@intFromPtr(buf.ptr) - @intFromPtr(self.bytes.ptr)) >> page_shift);
         }
 
         fn remap(context: *anyopaque, memory: []u8, alignment: mem.Alignment, new_len: usize, return_address: usize) ?[*]u8 {
