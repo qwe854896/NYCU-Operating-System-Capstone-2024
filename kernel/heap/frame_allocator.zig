@@ -4,7 +4,9 @@ const buddy = @import("buddy.zig");
 const mem = std.mem;
 const Buddy = buddy.Buddy;
 
-const startup_allocator = @import("allocator.zig").simple_allocator;
+var buffer: [0x1000000]u8 = undefined;
+var fba = std.heap.FixedBufferAllocator.init(&buffer);
+pub const startup_allocator = fba.allocator();
 
 fn fixUp(len: usize) usize {
     if (len == 0) {

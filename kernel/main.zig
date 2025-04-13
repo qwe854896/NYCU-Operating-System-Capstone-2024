@@ -4,12 +4,11 @@ const uart = @import("uart.zig");
 const mailbox = @import("mailbox.zig");
 const reboot = @import("reboot.zig");
 const cpio = @import("cpio.zig");
-const allocator = @import("allocator.zig");
 const dtb = @import("dtb/main.zig");
 const interrupt = @import("interrupt.zig");
-const frame_allocator = @import("frame_allocator.zig");
+const frame_allocator = @import("heap/frame_allocator.zig");
 
-const simple_allocator = allocator.simple_allocator;
+const startup_allocator = frame_allocator.startup_allocator;
 const mini_uart_reader = uart.mini_uart_reader;
 const mini_uart_writer = uart.mini_uart_writer;
 
@@ -58,7 +57,7 @@ fn parseCommand(command: []const u8) Command {
 }
 
 fn execFile(content: []const u8) void {
-    const program_stack = simple_allocator.alloc(u8, 0x1000) catch {
+    const program_stack = startup_allocator.alloc(u8, 0x1000) catch {
         @panic("Out of Memory! No buffer for executing a file.");
     };
     const program_start_address: usize = @intFromPtr(content.ptr);
@@ -79,8 +78,8 @@ fn execFile(content: []const u8) void {
     );
 }
 
-fn simpleShell(page_allocator: std.mem.Allocator) void {
-    var buffer = simple_allocator.alloc(u8, 256) catch {
+fn simpleShell(allocator: std.mem.Allocator) void {
+    var buffer = startup_allocator.alloc(u8, 256) catch {
         @panic("Out of Memory! No buffer for simple shell.");
     };
     while (true) {
@@ -114,7 +113,7 @@ fn simpleShell(page_allocator: std.mem.Allocator) void {
                 reboot.reset(100);
             },
             Command.ListFiles => {
-                const fs = cpio.listFiles(simple_allocator);
+                const fs = cpio.listFiles(startup_allocator);
                 if (fs) |files| {
                     for (files) |file| {
                         _ = mini_uart_writer.print("{s}\n", .{file}) catch {};
@@ -136,7 +135,7 @@ fn simpleShell(page_allocator: std.mem.Allocator) void {
                 recvlen = mini_uart_reader.read(buffer) catch 0;
 
                 const name_size = std.fmt.parseInt(u32, buffer[0..recvlen], 10) catch 0;
-                const demo_buffer = simple_allocator.alloc(u8, name_size) catch {
+                const demo_buffer = startup_allocator.alloc(u8, name_size) catch {
                     continue;
                 };
 
@@ -164,7 +163,7 @@ fn simpleShell(page_allocator: std.mem.Allocator) void {
                 recvlen = mini_uart_reader.read(buffer) catch 0;
 
                 const name_size = std.fmt.parseInt(u32, buffer[0..recvlen], 10) catch 0;
-                const demo_buffer: []u8 align(8192) = page_allocator.alloc(u8, name_size) catch {
+                const demo_buffer: []u8 align(8192) = allocator.alloc(u8, name_size) catch {
                     _ = mini_uart_writer.write("Allocation failed\n") catch {};
                     continue;
                 };
@@ -177,7 +176,7 @@ fn simpleShell(page_allocator: std.mem.Allocator) void {
 
                 const address = std.fmt.parseInt(usize, buffer[2..recvlen], 16) catch 0;
                 const ptr: [*]const u8 = @ptrFromInt(address);
-                page_allocator.free(ptr[0..1]);
+                allocator.free(ptr[0..1]);
 
                 _ = mini_uart_writer.print("Freed memory at address: 0x{X}\n", .{address}) catch {};
             },
@@ -215,7 +214,7 @@ export fn main(dtb_address: usize) void {
         @panic("Cannot obtain ARM memory information from mailbox.");
     };
 
-    const dtb_size = dtb.init(simple_allocator, dtb_address);
+    const dtb_size = dtb.init(startup_allocator, dtb_address);
     dtb.fdtTraverse(cpio.initRamfsCallback);
 
     const initrd_start_ptr = cpio.getInitrdStartPtr();
@@ -237,9 +236,9 @@ export fn main(dtb_address: usize) void {
     fa.memory_reserve(initrd_start_ptr, initrd_end_ptr);
     fa.memory_reserve(dtb_address, dtb_address + dtb_size);
 
-    const page_allocator = fa.allocator();
+    const allocator = fa.allocator();
 
-    simpleShell(page_allocator);
+    simpleShell(allocator);
 }
 
 extern const _flash_img_start: u32;
