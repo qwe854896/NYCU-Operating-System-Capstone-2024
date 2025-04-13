@@ -53,25 +53,35 @@ pub fn DynamicAllocator(comptime config: Config) type {
             const slot_size = slotSize(class);
             assert(slab_len % slot_size == 0);
 
-            if (config.verbose_log) {
-                log.info("Allocate at chunk size {d}.", .{slot_size});
-            }
-
             const top_free_ptr = self.frees[class];
             if (top_free_ptr != 0) {
                 const node: *usize = @ptrFromInt(top_free_ptr);
                 self.frees[class] = node.*;
+
+                if (config.verbose_log) {
+                    log.info("Allocate 0x{X} at chunk size {d}.", .{ top_free_ptr, slot_size });
+                }
+
                 return @ptrFromInt(top_free_ptr);
             }
 
             const next_addr = self.next_addrs[class];
             if ((next_addr % slab_len) != 0) {
                 self.next_addrs[class] = next_addr + slot_size;
+
+                if (config.verbose_log) {
+                    log.info("Allocate 0x{X} at chunk size {d}.", .{ next_addr, slot_size });
+                }
+
                 return @ptrFromInt(next_addr);
             }
 
             const slab = self.page_allocator.rawAlloc(slab_len, .fromByteUnits(slab_len), ra) orelse return null;
             self.next_addrs[class] = @intFromPtr(slab) + slot_size;
+
+            if (config.verbose_log) {
+                log.info("Allocate 0x{X} at chunk size {d}.", .{ @intFromPtr(slab), slot_size });
+            }
 
             return slab;
         }
@@ -88,7 +98,7 @@ pub fn DynamicAllocator(comptime config: Config) type {
             }
 
             if (config.verbose_log) {
-                log.info("Free at chunk size {d}.", .{slotSize(class)});
+                log.info("Free 0x{X} at chunk size {d}.", .{ @intFromPtr(memory.ptr), slotSize(class) });
             }
 
             const node: *usize = @alignCast(@ptrCast(memory.ptr));
