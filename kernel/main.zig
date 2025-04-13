@@ -7,12 +7,14 @@ const cpio = @import("cpio.zig");
 const dtb = @import("dtb/main.zig");
 const interrupt = @import("interrupt.zig");
 const page_allocator = @import("heap/page_allocator.zig");
+const dynamic_allocator = @import("heap/dynamic_allocator.zig");
 
 const startup_allocator = page_allocator.startup_allocator;
 const mini_uart_reader = uart.mini_uart_reader;
 const mini_uart_writer = uart.mini_uart_writer;
 
 const PageAllocator = page_allocator.PageAllocator(.{ .verbose_log = true });
+const DynamicAllocator = dynamic_allocator.DynamicAllocator(.{ .verbose_log = true });
 
 pub const std_options: std.Options = .{
     .log_level = .info,
@@ -82,6 +84,10 @@ fn simpleShell(allocator: std.mem.Allocator) void {
     var buffer = startup_allocator.alloc(u8, 256) catch {
         @panic("Out of Memory! No buffer for simple shell.");
     };
+
+    var alloc_map = std.AutoHashMap(usize, []u8).init(startup_allocator);
+    defer alloc_map.deinit();
+
     while (true) {
         _ = mini_uart_writer.write("# ") catch {};
 
@@ -168,6 +174,10 @@ fn simpleShell(allocator: std.mem.Allocator) void {
                     continue;
                 };
 
+                alloc_map.put(@intFromPtr(demo_buffer.ptr), demo_buffer) catch {
+                    @panic("Failed to put in map");
+                };
+
                 _ = mini_uart_writer.print("Buffer Address: 0x{X}\n", .{@intFromPtr(demo_buffer.ptr)}) catch {};
             },
             Command.DemoPageFree => {
@@ -175,10 +185,15 @@ fn simpleShell(allocator: std.mem.Allocator) void {
                 recvlen = mini_uart_reader.read(buffer) catch 0;
 
                 const address = std.fmt.parseInt(usize, buffer[2..recvlen], 16) catch 0;
-                const ptr: [*]const u8 = @ptrFromInt(address);
-                allocator.free(ptr[0..1]);
+                const demo_buffer = alloc_map.get(address);
 
-                _ = mini_uart_writer.print("Freed memory at address: 0x{X}\n", .{address}) catch {};
+                if (demo_buffer) |db| {
+                    _ = alloc_map.remove(address);
+                    allocator.free(db);
+                    _ = mini_uart_writer.print("Freed memory at address: 0x{X}\n", .{address}) catch {};
+                } else {
+                    _ = mini_uart_writer.print("No such address: 0x{X}\n", .{address}) catch {};
+                }
             },
         }
     }
@@ -236,7 +251,9 @@ export fn main(dtb_address: usize) void {
     fa.memory_reserve(initrd_start_ptr, initrd_end_ptr);
     fa.memory_reserve(dtb_address, dtb_address + dtb_size);
 
-    const allocator = fa.allocator();
+    var da = DynamicAllocator.init(&fa);
+
+    const allocator = da.allocator();
 
     simpleShell(allocator);
 }

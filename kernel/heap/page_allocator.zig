@@ -8,7 +8,8 @@ var buffer: [0x1000000]u8 = undefined;
 var fba = std.heap.FixedBufferAllocator.init(&buffer);
 pub const startup_allocator = fba.allocator();
 
-const log2_page_size = 12;
+pub const log2_page_size = 12;
+pub const page_size = 1 << log2_page_size;
 
 fn fixUp(len: usize) usize {
     if (len == 0) {
