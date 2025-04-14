@@ -9,7 +9,6 @@ const interrupt = @import("interrupt.zig");
 const page_allocator = @import("heap/page_allocator.zig");
 const dynamic_allocator = @import("heap/dynamic_allocator.zig");
 
-const startup_allocator = page_allocator.startup_allocator;
 const mini_uart_reader = uart.mini_uart_reader;
 const mini_uart_writer = uart.mini_uart_writer;
 
@@ -222,9 +221,17 @@ export fn main(dtb_address: usize) void {
     const arm_memory = mailbox.getArmMemory() catch {
         @panic("Cannot obtain ARM memory information from mailbox.");
     };
+    const mem: []allowzero u8 = @as([*]allowzero u8, @ptrFromInt(arm_memory.@"0"))[0..arm_memory.@"1"];
+
+    const buffer_len = mem.len >> page_allocator.log2_page_size;
+    const buffer_addr = std.mem.alignForward(usize, @intFromPtr(&_flash_img_end), 1 << page_allocator.log2_page_size);
+    const buffer: []u8 = @as([*]u8, @ptrFromInt(buffer_addr))[0..buffer_len];
+    var fba = std.heap.FixedBufferAllocator.init(buffer);
+    const startup_allocator = fba.allocator();
 
     const dtb_size = dtb.init(startup_allocator, dtb_address);
     dtb.fdtTraverse(cpio.initRamfsCallback);
+    dtb.deinit(startup_allocator);
 
     const initrd_start_ptr = cpio.getInitrdStartPtr();
     const initrd_end_ptr = cpio.getInitrdEndPtr();
@@ -237,7 +244,7 @@ export fn main(dtb_address: usize) void {
     std.log.info("DTB Address: 0x{X}", .{dtb_address});
     std.log.info("DTB Size: 0x{X}", .{dtb_size});
 
-    const mem: []allowzero u8 = @as([*]allowzero u8, @ptrFromInt(arm_memory.@"0"))[0..arm_memory.@"1"];
+    fba = std.heap.FixedBufferAllocator.init(buffer);
     var fa = PageAllocator.init(startup_allocator, mem) catch {
         @panic("Cannot init page allocator!");
     };
@@ -248,10 +255,7 @@ export fn main(dtb_address: usize) void {
     fa.memory_reserve(dtb_address, dtb_address + dtb_size);
 
     var da = DynamicAllocator.init(&fa);
-
     const allocator = da.allocator();
-
-    dtb.deinit(startup_allocator);
 
     simpleShell(allocator);
 }

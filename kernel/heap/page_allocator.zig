@@ -6,10 +6,6 @@ const log2_int = std.math.log2_int;
 const Buddy = buddy.Buddy;
 const assert = std.debug.assert;
 
-var buffer: [0x1000000]u8 = undefined;
-var fba = std.heap.FixedBufferAllocator.init(&buffer);
-pub const startup_allocator = fba.allocator();
-
 pub const log2_page_size = 12;
 pub const page_size = 1 << log2_page_size;
 
@@ -50,7 +46,12 @@ pub fn PageAllocator(comptime config: Config) type {
                 .bytes = bytes[0..],
             };
 
+            const masks = manager.bitset.unmanaged.masks - 1;
+            const metadata: []u8 = @ptrCast(masks[0..masks[0]]);
+            const metadata_start = @intFromPtr(metadata.ptr);
+
             self.memory_reserve(bytes.len, fix_len);
+            self.memory_reserve(metadata_start, metadata_start + metadata.len);
 
             return self;
         }

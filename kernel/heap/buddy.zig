@@ -162,7 +162,7 @@ pub fn Buddy(comptime config: Config) type {
             self.setFree(index, log_node_size, false);
 
             if (start_offset <= left_offset and right_offset <= end_offset) {
-                if (config.verbose_log) {
+                if (config.verbose_log and split) {
                     log.info("Remove page 0x{X} from order {}.", .{ self.indexToOffset(index), log_node_size });
                 }
                 return;
