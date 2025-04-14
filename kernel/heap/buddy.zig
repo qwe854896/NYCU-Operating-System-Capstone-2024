@@ -22,12 +22,14 @@ pub fn Buddy(comptime config: Config) type {
         pub fn init(allocator: std.mem.Allocator, len: usize) !Self {
             assert(isPowerOfTwo(len));
 
+            const log_len = log2_int(usize, len);
+
             var self = Self{
-                .log_len = log2_int(usize, len),
-                .bitset = try DynamicBitSet.initEmpty(allocator, len << 2),
+                .log_len = log_len,
+                .bitset = try DynamicBitSet.initEmpty(allocator, (len << 2) - (log_len + 3)),
             };
 
-            var log_node_size = self.log_len + 1;
+            var log_node_size = log_len + 1;
 
             for (1..len << 1) |i| {
                 if (isPowerOfTwo(i)) {
