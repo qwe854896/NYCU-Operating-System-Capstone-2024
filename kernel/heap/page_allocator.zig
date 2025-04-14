@@ -39,11 +39,11 @@ pub fn PageAllocator(comptime config: Config) type {
         manager: ConfiguredBuddy,
         bytes: []allowzero u8,
 
-        pub fn init(bytes: []allowzero u8) !Self {
+        pub fn init(a: mem.Allocator, bytes: []allowzero u8) !Self {
             const fix_len = fixUp(bytes.len);
             const num_of_pages = fix_len >> log2_page_size;
 
-            const manager = try ConfiguredBuddy.init(startup_allocator, num_of_pages);
+            const manager = try ConfiguredBuddy.init(a, num_of_pages);
 
             var self = Self{
                 .manager = manager,

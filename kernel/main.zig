@@ -257,7 +257,7 @@ export fn main(dtb_address: usize) void {
     std.log.info("DTB Size: 0x{X}", .{dtb_size});
 
     const mem: []allowzero u8 = @as([*]allowzero u8, @ptrFromInt(arm_memory.@"0"))[0..arm_memory.@"1"];
-    var fa = PageAllocator.init(mem) catch {
+    var fa = PageAllocator.init(startup_allocator, mem) catch {
         @panic("Cannot init page allocator!");
     };
 
