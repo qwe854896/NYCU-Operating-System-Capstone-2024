@@ -244,7 +244,9 @@ export fn main(dtb_address: usize) void {
     std.log.info("DTB Size: 0x{X}", .{dtb_size});
 
     const mem: []allowzero u8 = @as([*]allowzero u8, @ptrFromInt(arm_memory.@"0"))[0..arm_memory.@"1"];
-    var fa = PageAllocator.init(mem);
+    var fa = PageAllocator.init(mem) catch {
+        @panic("Cannot init page allocator!");
+    };
 
     fa.memory_reserve(0x0000, 0x1000); // spin tables
     fa.memory_reserve(@intFromPtr(&_flash_img_start), @intFromPtr(&_flash_img_end));

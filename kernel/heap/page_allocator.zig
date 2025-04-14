@@ -36,18 +36,14 @@ pub fn PageAllocator(comptime config: Config) type {
         const Self = @This();
         const ConfiguredBuddy = Buddy(.{ .verbose_log = config.verbose_log });
 
-        manager: *ConfiguredBuddy,
+        manager: ConfiguredBuddy,
         bytes: []allowzero u8,
 
-        pub fn init(bytes: []allowzero u8) Self {
+        pub fn init(bytes: []allowzero u8) !Self {
             const fix_len = fixUp(bytes.len);
             const num_of_pages = fix_len >> log2_page_size;
-            const ctx_len = num_of_pages << 1;
 
-            var ctx = startup_allocator.alloc(u8, ctx_len) catch {
-                @panic("Out of Memory! No buffer for buddy system manager.");
-            };
-            const manager = ConfiguredBuddy.init(ctx[0..ctx_len]);
+            const manager = try ConfiguredBuddy.init(startup_allocator, num_of_pages);
 
             var self = Self{
                 .manager = manager,

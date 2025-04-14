@@ -1,5 +1,6 @@
 const std = @import("std");
 const log = std.log.scoped(.buddy);
+const DynamicBitSet = std.bit_set.DynamicBitSet;
 const assert = std.debug.assert;
 const isPowerOfTwo = std.math.isPowerOfTwo;
 const log2_int = std.math.log2_int;
@@ -15,30 +16,24 @@ pub fn Buddy(comptime config: Config) type {
     return struct {
         const Self = @This();
 
-        /// Should be accessed from getter and setter
-        /// u5 is enough, but u8 seems to be more portable
-        log_len: u8,
-        log_longest: [1]u8,
+        log_len: Log2Usize,
+        bitset: DynamicBitSet,
 
-        /// Inference the number of pages from passed context
-        /// For example, if the ctx.len is 16, then the number of pages is 8
-        /// log_len should be 3
-        /// log_longest's size should be 15
-        pub fn init(ctx: []u8) *Self {
-            const len = ctx.len >> 1;
+        pub fn init(allocator: std.mem.Allocator, len: usize) !Self {
             assert(isPowerOfTwo(len));
 
-            const self: *Self = @ptrCast(@alignCast(ctx));
+            var self = Self{
+                .log_len = log2_int(usize, len),
+                .bitset = try DynamicBitSet.initEmpty(allocator, len << 2),
+            };
 
-            self.setLen(len);
+            var log_node_size = self.log_len + 1;
 
-            var node_size = len << 1;
-
-            for (0..ctx.len - 1) |i| {
-                if (isPowerOfTwo(i + 1)) {
-                    node_size >>= 1;
+            for (1..len << 1) |i| {
+                if (isPowerOfTwo(i)) {
+                    log_node_size -= 1;
                 }
-                self.setLongest(i, node_size);
+                self.setBitmap(i, log_node_size, true);
             }
 
             if (config.verbose_log) {
@@ -48,41 +43,54 @@ pub fn Buddy(comptime config: Config) type {
             return self;
         }
 
-        pub fn alloc(self: *Self, len: usize) ?usize {
-            const new_len = fixUp(len);
+        pub fn deinit(self: *Self) void {
+            self.bitset.deinit();
+        }
 
-            if (self.getLongest(0) < new_len) {
+        pub fn alloc(self: *Self, len: usize) ?usize {
+            const log_len = log2_int(usize, fixUp(len));
+
+            if (self.getMsb(1) == null or self.getMsb(1).? < log_len) {
                 return null;
             }
 
-            var index: usize = 0;
-            var node_size = self.getLen();
-            while (node_size != new_len) : (node_size >>= 1) {
-                if (config.verbose_log and self.getLongest(index) == node_size) {
-                    log.info("Remove page 0x{X} from order {}.", .{ self.indexToOffset(index), log2_int(usize, node_size) });
-                    log.info("Add page 0x{X} to order {}.", .{ self.indexToOffset(left(index)), log2_int(usize, node_size >> 1) });
-                    log.info("Add page 0x{X} to order {}.", .{ self.indexToOffset(right(index)), log2_int(usize, node_size >> 1) });
+            var index: usize = 1;
+            var log_node_size = self.log_len;
+
+            while (log_node_size != log_len) : (log_node_size -= 1) {
+                if (config.verbose_log and self.getBitmap(index, log_node_size)) {
+                    log.info("Remove page 0x{X} from order {}.", .{ self.indexToOffset(index), log_node_size });
+                    log.info("Add page 0x{X} to order {}.", .{ self.indexToOffset(left(index)), log_node_size - 1 });
+                    log.info("Add page 0x{X} to order {}.", .{ self.indexToOffset(right(index)), log_node_size - 1 });
                 }
-                const left_longest = self.getLongest(left(index));
-                const right_longest = self.getLongest(right(index));
-                if (left_longest >= new_len and (right_longest < new_len or right_longest >= left_longest)) {
+
+                const left_lsb = self.getLsb(left(index), log_len);
+                const right_lsb = self.getLsb(right(index), log_len);
+
+                if (right_lsb == null or (left_lsb != null and left_lsb.? <= right_lsb.?)) {
                     index = left(index);
                 } else {
                     index = right(index);
                 }
             }
 
-            self.setLongest(index, 0);
+            self.setBitmap(index, log_len, false);
 
-            const offset = (index + 1) * node_size - self.getLen();
+            const offset = (index << log_len) - self.getLen();
 
             if (config.verbose_log) {
-                log.info("Remove page 0x{X} from order {}.", .{ offset, log2_int(usize, node_size) });
+                log.info("Remove page 0x{X} from order {}.", .{ offset, log_len });
             }
 
-            while (index != 0) {
+            while (index != 1) {
                 index = parent(index);
-                self.setLongest(index, @max(self.getLongest(left(index)), self.getLongest(right(index))));
+                log_node_size += 1;
+
+                for (log_len..log_node_size) |order| {
+                    self.setBitmap(index, order, self.getBitmap(left(index), order) or self.getBitmap(right(index), order));
+                }
+
+                self.setBitmap(index, log_node_size, false);
             }
 
             return offset;
@@ -91,37 +99,45 @@ pub fn Buddy(comptime config: Config) type {
         pub fn free(self: *Self, offset: usize) void {
             assert(offset < self.getLen());
 
-            var node_size: usize = 1;
-            var index = offset + self.getLen() - 1; // start from the leaf node
+            var log_node_size: usize = 0;
+            var index = offset + self.getLen(); // start from the leaf node
 
-            while (self.getLongest(index) != 0) : (index = parent(index)) {
-                node_size <<= 1;
-                if (index == 0) {
+            while (self.getBitmap(index, log_node_size)) : (index = parent(index)) {
+                log_node_size += 1;
+                if (index == 1) {
                     return;
                 }
             }
-            self.setLongest(index, node_size);
+
+            self.setBitmap(index, log_node_size, true);
 
             if (config.verbose_log) {
-                log.info("Add page 0x{X} to order {}.", .{ offset, log2_int(usize, node_size) });
+                log.info("Add page 0x{X} to order {}.", .{ offset, log_node_size });
             }
 
-            while (index != 0) {
+            const log_len = log_node_size;
+
+            while (index != 1) {
                 index = parent(index);
-                node_size <<= 1;
+                log_node_size += 1;
 
-                const left_longest = self.getLongest(left(index));
-                const right_longest = self.getLongest(right(index));
+                const left_free = self.getBitmap(left(index), log_node_size - 1);
+                const right_free = self.getBitmap(right(index), log_node_size - 1);
 
-                if (left_longest + right_longest == node_size) {
-                    self.setLongest(index, node_size);
+                if (left_free and right_free) {
                     if (config.verbose_log) {
-                        log.info("Remove page 0x{X} from order {}.", .{ self.indexToOffset(left(index)), log2_int(usize, node_size >> 1) });
-                        log.info("Remove page 0x{X} from order {}.", .{ self.indexToOffset(right(index)), log2_int(usize, node_size >> 1) });
-                        log.info("Add page 0x{X} to order {}.", .{ self.indexToOffset(index), log2_int(usize, node_size) });
+                        log.info("Remove page 0x{X} from order {}.", .{ self.indexToOffset(left(index)), log_node_size - 1 });
+                        log.info("Remove page 0x{X} from order {}.", .{ self.indexToOffset(right(index)), log_node_size - 1 });
+                        log.info("Add page 0x{X} to order {}.", .{ self.indexToOffset(index), log_node_size });
                     }
+                    self.setBitmap(index, log_node_size, true);
+                    self.setBitmap(index, log_node_size - 1, false);
                 } else {
-                    self.setLongest(index, @max(left_longest, right_longest));
+                    self.setBitmap(index, log_node_size - 1, left_free or right_free);
+                }
+
+                for (log_len..log_node_size - 1) |order| {
+                    self.setBitmap(index, order, self.getBitmap(left(index), order) or self.getBitmap(right(index), order));
                 }
             }
         }
@@ -134,63 +150,86 @@ pub fn Buddy(comptime config: Config) type {
             if (config.verbose_log) {
                 log.info("Reserve pages: [0x{X}, 0x{X}).", .{ start_offset, end_offset });
             }
-            self.recursive_reserve(0, 0, self.getLen(), start_offset, end_offset);
+            self.recursive_reserve(self.log_len, 1, 0, self.getLen(), start_offset, end_offset);
         }
 
-        fn recursive_reserve(self: *Self, index: usize, left_offset: usize, right_offset: usize, start_offset: usize, end_offset: usize) void {
+        fn recursive_reserve(self: *Self, log_node_size: Log2Usize, index: usize, left_offset: usize, right_offset: usize, start_offset: usize, end_offset: usize) void {
             if (right_offset <= start_offset or end_offset <= left_offset) {
                 return;
             }
+
+            const split = self.getBitmap(index, log_node_size);
+            self.setBitmap(index, log_node_size, false);
+
             if (start_offset <= left_offset and right_offset <= end_offset) {
-                self.setLongest(index, 0);
                 if (config.verbose_log) {
-                    log.info("Remove page 0x{X} from order {}.", .{ self.indexToOffset(index), log2_int(usize, right_offset - left_offset) });
+                    log.info("Remove page 0x{X} from order {}.", .{ self.indexToOffset(index), log_node_size });
                 }
                 return;
             }
 
-            if (config.verbose_log and self.getLongest(index) == right_offset - left_offset) {
-                log.info("Remove page 0x{X} from order {}.", .{ self.indexToOffset(index), log2_int(usize, right_offset - left_offset) });
-                log.info("Add page 0x{X} to order {}.", .{ self.indexToOffset(left(index)), log2_int(usize, (right_offset - left_offset) >> 1) });
-                log.info("Add page 0x{X} to order {}.", .{ self.indexToOffset(right(index)), log2_int(usize, (right_offset - left_offset) >> 1) });
+            if (config.verbose_log and split) {
+                log.info("Remove page 0x{X} from order {}.", .{ self.indexToOffset(index), log_node_size });
+                log.info("Add page 0x{X} to order {}.", .{ self.indexToOffset(left(index)), log_node_size - 1 });
+                log.info("Add page 0x{X} to order {}.", .{ self.indexToOffset(right(index)), log_node_size - 1 });
             }
 
             const middle_offset = (left_offset + right_offset) >> 1;
-            self.recursive_reserve(left(index), left_offset, middle_offset, start_offset, end_offset);
-            self.recursive_reserve(right(index), middle_offset, right_offset, start_offset, end_offset);
+            self.recursive_reserve(log_node_size - 1, left(index), left_offset, middle_offset, start_offset, end_offset);
+            self.recursive_reserve(log_node_size - 1, right(index), middle_offset, right_offset, start_offset, end_offset);
 
-            self.setLongest(index, @max(self.getLongest(left(index)), self.getLongest(right(index))));
+            for (0..log_node_size) |order| {
+                self.setBitmap(index, order, self.getBitmap(left(index), order) or self.getBitmap(right(index), order));
+            }
         }
 
         pub fn backward(self: *const Self, offset: usize) usize {
             assert(offset < self.getLen());
-            var index = offset + self.getLen() - 1; // start from leaf node
-            while (self.getLongest(index) != 0) {
+            var index = offset + self.getLen(); // start from leaf node
+            while (self.getMsb(index) != null) {
                 index = parent(index);
             }
             return index;
-        }
-
-        inline fn setLen(self: *Self, len: usize) void {
-            self.log_len = log2_int(usize, len);
         }
 
         inline fn getLen(self: *const Self) usize {
             return @as(usize, 1) << @as(Log2Usize, @intCast(self.log_len));
         }
 
-        /// Map node_size
-        /// 0 1 2 4 8 16 32 ...
-        /// to log_longest
-        /// 0 1 2 3 4 5  6  ...
-        inline fn setLongest(self: *Self, index: usize, node_size: usize) void {
-            const ptr: [*]u8 = @ptrCast(&self.log_longest);
-            ptr[index] = log2_int(usize, node_size << 1 | 1);
+        inline fn getLsb(self: *const Self, index: usize, log_start: Log2Usize) ?Log2Usize {
+            for (log_start..self.log_len - log2_int(usize, index) + 1) |order| {
+                if (self.getBitmap(index, order)) {
+                    return @intCast(order);
+                }
+            }
+            return null;
         }
 
-        inline fn getLongest(self: *const Self, index: usize) usize {
-            const ptr: [*]const u8 = @ptrCast(&self.log_longest);
-            return (@as(usize, 1) << @as(Log2Usize, @intCast(ptr[index]))) >> 1;
+        inline fn getMsb(self: *const Self, index: usize) ?Log2Usize {
+            var order = self.log_len - log2_int(usize, index);
+            while (true) : (order -= 1) {
+                if (self.getBitmap(index, order)) {
+                    return order;
+                }
+                if (order == 0) {
+                    return null;
+                }
+            }
+        }
+
+        inline fn setBitmap(self: *Self, index: usize, order: usize, value: bool) void {
+            self.bitset.setValue(self.getBitmapIndex(index, order), value);
+        }
+
+        inline fn getBitmap(self: *const Self, index: usize, order: usize) bool {
+            return self.bitset.isSet(self.getBitmapIndex(index, order));
+        }
+
+        inline fn getBitmapIndex(self: *const Self, index: usize, order: usize) usize {
+            const o = log2_int(usize, index);
+            const p = (self.getLen() << 2) - (@as(usize, @intCast(self.log_len + 2 - o)) << (o + 1));
+            const f = (self.log_len + 1 - o) * (index ^ (@as(usize, 1) << o));
+            return p + f + order;
         }
 
         fn fixUp(len: usize) usize {
@@ -208,23 +247,23 @@ pub fn Buddy(comptime config: Config) type {
         }
 
         inline fn left(index: usize) usize {
-            return index << 1 | 1;
+            return index << 1;
         }
 
         inline fn right(index: usize) usize {
-            return (index << 1) + 2;
+            return index << 1 | 1;
         }
 
         inline fn parent(index: usize) usize {
-            return ((index + 1) >> 1) - 1;
+            return index >> 1;
         }
 
         pub inline fn indexToSize(self: *const Self, index: usize) usize {
-            return self.getLen() >> log2_int(usize, index + 1);
+            return self.getLen() >> log2_int(usize, index);
         }
 
         inline fn indexToOffset(self: *const Self, index: usize) usize {
-            return (index + 1) * self.indexToSize(index) - self.getLen();
+            return index * self.indexToSize(index) - self.getLen();
         }
 
         pub fn format(self: *const Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
@@ -233,17 +272,15 @@ pub fn Buddy(comptime config: Config) type {
 
             const len = self.getLen();
 
-            var node_size = len << 1;
             var log_len = self.log_len + 1;
 
             var count: usize = 0;
-            for (0..(len << 1) - 1) |i| {
-                if (isPowerOfTwo(i + 1)) {
-                    node_size >>= 1;
+            for (1..(len << 1)) |i| {
+                if (isPowerOfTwo(i)) {
                     log_len -= 1;
                 }
-                count += @as(usize, @intCast(@as(u1, @bitCast(self.getLongest(i) == node_size and self.getLongest(((i + 1) ^ 1) - 1) != node_size))));
-                if (isPowerOfTwo(i + 2)) {
+                count += @as(usize, @intCast(@as(u1, @bitCast(self.getBitmap(i, log_len) and !self.getBitmap(i ^ 1, log_len)))));
+                if (isPowerOfTwo(i + 1)) {
                     try std.fmt.format(writer, "Order {}: {} blocks\n", .{ log_len, count });
                     count = 0;
                 }
@@ -255,11 +292,8 @@ pub fn Buddy(comptime config: Config) type {
 test "Buddy" {
     const heap_size = 16;
 
-    const S = struct {
-        var ctx: [2 * heap_size]u8 = undefined;
-    };
-
-    var buddy = Buddy(.{}).init(S.ctx[0..]);
+    var buddy = try Buddy(.{}).init(testing.allocator, heap_size);
+    defer buddy.deinit();
 
     for (0..16) |i| {
         const offset = buddy.alloc(1).?;
