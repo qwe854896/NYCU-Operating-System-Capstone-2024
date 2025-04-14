@@ -33,7 +33,7 @@ pub fn Buddy(comptime config: Config) type {
                 if (isPowerOfTwo(i)) {
                     log_node_size -= 1;
                 }
-                self.setBitmap(i, log_node_size, true);
+                self.setFree(i, log_node_size, true);
             }
 
             if (config.verbose_log) {
@@ -50,7 +50,7 @@ pub fn Buddy(comptime config: Config) type {
         pub fn alloc(self: *Self, len: usize) ?usize {
             const log_len = log2_int(usize, fixUp(len));
 
-            if (self.getMsb(1) == null or self.getMsb(1).? < log_len) {
+            if (self.getMsb(1, self.log_len) == null or self.getMsb(1, self.log_len).? < log_len) {
                 return null;
             }
 
@@ -58,14 +58,14 @@ pub fn Buddy(comptime config: Config) type {
             var log_node_size = self.log_len;
 
             while (log_node_size != log_len) : (log_node_size -= 1) {
-                if (config.verbose_log and self.getBitmap(index, log_node_size)) {
+                if (config.verbose_log and self.getFree(index, log_node_size)) {
                     log.info("Remove page 0x{X} from order {}.", .{ self.indexToOffset(index), log_node_size });
                     log.info("Add page 0x{X} to order {}.", .{ self.indexToOffset(left(index)), log_node_size - 1 });
                     log.info("Add page 0x{X} to order {}.", .{ self.indexToOffset(right(index)), log_node_size - 1 });
                 }
 
-                const left_lsb = self.getLsb(left(index), log_len);
-                const right_lsb = self.getLsb(right(index), log_len);
+                const left_lsb = self.getLsb(left(index), log_node_size, log_len);
+                const right_lsb = self.getLsb(right(index), log_node_size, log_len);
 
                 if (right_lsb == null or (left_lsb != null and left_lsb.? <= right_lsb.?)) {
                     index = left(index);
@@ -74,7 +74,7 @@ pub fn Buddy(comptime config: Config) type {
                 }
             }
 
-            self.setBitmap(index, log_len, false);
+            self.setFree(index, log_len, false);
 
             const offset = (index << log_len) - self.getLen();
 
@@ -87,10 +87,10 @@ pub fn Buddy(comptime config: Config) type {
                 log_node_size += 1;
 
                 for (log_len..log_node_size) |order| {
-                    self.setBitmap(index, order, self.getBitmap(left(index), order) or self.getBitmap(right(index), order));
+                    self.setBitmap(index, log_node_size, order, self.getBitmap(left(index), log_node_size - 1, order) or self.getBitmap(right(index), log_node_size - 1, order));
                 }
 
-                self.setBitmap(index, log_node_size, false);
+                self.setFree(index, log_node_size, false);
             }
 
             return offset;
@@ -99,17 +99,17 @@ pub fn Buddy(comptime config: Config) type {
         pub fn free(self: *Self, offset: usize) void {
             assert(offset < self.getLen());
 
-            var log_node_size: usize = 0;
+            var log_node_size: Log2Usize = 0;
             var index = offset + self.getLen(); // start from the leaf node
 
-            while (self.getBitmap(index, log_node_size)) : (index = parent(index)) {
+            while (self.getFree(index, log_node_size)) : (index = parent(index)) {
                 log_node_size += 1;
                 if (index == 1) {
                     return;
                 }
             }
 
-            self.setBitmap(index, log_node_size, true);
+            self.setFree(index, log_node_size, true);
 
             if (config.verbose_log) {
                 log.info("Add page 0x{X} to order {}.", .{ offset, log_node_size });
@@ -121,8 +121,8 @@ pub fn Buddy(comptime config: Config) type {
                 index = parent(index);
                 log_node_size += 1;
 
-                const left_free = self.getBitmap(left(index), log_node_size - 1);
-                const right_free = self.getBitmap(right(index), log_node_size - 1);
+                const left_free = self.getFree(left(index), log_node_size - 1);
+                const right_free = self.getFree(right(index), log_node_size - 1);
 
                 if (left_free and right_free) {
                     if (config.verbose_log) {
@@ -130,14 +130,14 @@ pub fn Buddy(comptime config: Config) type {
                         log.info("Remove page 0x{X} from order {}.", .{ self.indexToOffset(right(index)), log_node_size - 1 });
                         log.info("Add page 0x{X} to order {}.", .{ self.indexToOffset(index), log_node_size });
                     }
-                    self.setBitmap(index, log_node_size, true);
-                    self.setBitmap(index, log_node_size - 1, false);
+                    self.setFree(index, log_node_size, true);
+                    self.setBitmap(index, log_node_size, log_node_size - 1, false);
                 } else {
-                    self.setBitmap(index, log_node_size - 1, left_free or right_free);
+                    self.setBitmap(index, log_node_size, log_node_size - 1, left_free or right_free);
                 }
 
                 for (log_len..log_node_size - 1) |order| {
-                    self.setBitmap(index, order, self.getBitmap(left(index), order) or self.getBitmap(right(index), order));
+                    self.setBitmap(index, log_node_size, order, self.getBitmap(left(index), log_node_size - 1, order) or self.getBitmap(right(index), log_node_size - 1, order));
                 }
             }
         }
@@ -158,8 +158,8 @@ pub fn Buddy(comptime config: Config) type {
                 return;
             }
 
-            const split = self.getBitmap(index, log_node_size);
-            self.setBitmap(index, log_node_size, false);
+            const split = self.getFree(index, log_node_size);
+            self.setFree(index, log_node_size, false);
 
             if (start_offset <= left_offset and right_offset <= end_offset) {
                 if (config.verbose_log) {
@@ -179,15 +179,17 @@ pub fn Buddy(comptime config: Config) type {
             self.recursive_reserve(log_node_size - 1, right(index), middle_offset, right_offset, start_offset, end_offset);
 
             for (0..log_node_size) |order| {
-                self.setBitmap(index, order, self.getBitmap(left(index), order) or self.getBitmap(right(index), order));
+                self.setBitmap(index, log_node_size, order, self.getBitmap(left(index), log_node_size - 1, order) or self.getBitmap(right(index), log_node_size - 1, order));
             }
         }
 
         pub fn backward(self: *const Self, offset: usize) usize {
             assert(offset < self.getLen());
             var index = offset + self.getLen(); // start from leaf node
-            while (self.getMsb(index) != null) {
+            var log_node_size: Log2Usize = 0;
+            while (self.getMsb(index, log_node_size) != null) {
                 index = parent(index);
+                log_node_size += 1;
             }
             return index;
         }
@@ -196,19 +198,19 @@ pub fn Buddy(comptime config: Config) type {
             return @as(usize, 1) << @as(Log2Usize, @intCast(self.log_len));
         }
 
-        inline fn getLsb(self: *const Self, index: usize, log_start: Log2Usize) ?Log2Usize {
-            for (log_start..self.log_len - log2_int(usize, index) + 1) |order| {
-                if (self.getBitmap(index, order)) {
+        inline fn getLsb(self: *const Self, index: usize, log_bit: Log2Usize, log_start: Log2Usize) ?Log2Usize {
+            for (log_start..log_bit) |order| {
+                if (self.getBitmap(index, log_bit - 1, order)) {
                     return @intCast(order);
                 }
             }
             return null;
         }
 
-        inline fn getMsb(self: *const Self, index: usize) ?Log2Usize {
-            var order = self.log_len - log2_int(usize, index);
+        inline fn getMsb(self: *const Self, index: usize, log_bit: Log2Usize) ?Log2Usize {
+            var order = log_bit;
             while (true) : (order -= 1) {
-                if (self.getBitmap(index, order)) {
+                if (self.getBitmap(index, log_bit, order)) {
                     return order;
                 }
                 if (order == 0) {
@@ -217,18 +219,25 @@ pub fn Buddy(comptime config: Config) type {
             }
         }
 
-        inline fn setBitmap(self: *Self, index: usize, order: usize, value: bool) void {
-            self.bitset.setValue(self.getBitmapIndex(index, order), value);
+        inline fn setFree(self: *Self, index: usize, log_bit: Log2Usize, value: bool) void {
+            self.setBitmap(index, log_bit, log_bit, value);
         }
 
-        inline fn getBitmap(self: *const Self, index: usize, order: usize) bool {
-            return self.bitset.isSet(self.getBitmapIndex(index, order));
+        inline fn getFree(self: *const Self, index: usize, log_bit: Log2Usize) bool {
+            return self.getBitmap(index, log_bit, log_bit);
         }
 
-        inline fn getBitmapIndex(self: *const Self, index: usize, order: usize) usize {
-            const o = log2_int(usize, index);
-            const p = (self.getLen() << 2) - (@as(usize, @intCast(self.log_len + 2 - o)) << (o + 1));
-            const f = (self.log_len + 1 - o) * (index ^ (@as(usize, 1) << o));
+        inline fn setBitmap(self: *Self, index: usize, log_bit: Log2Usize, order: usize, value: bool) void {
+            self.bitset.setValue(self.getBitmapIndex(index, log_bit, order), value);
+        }
+
+        inline fn getBitmap(self: *const Self, index: usize, log_bit: Log2Usize, order: usize) bool {
+            return self.bitset.isSet(self.getBitmapIndex(index, log_bit, order));
+        }
+
+        inline fn getBitmapIndex(self: *const Self, index: usize, log_bit: Log2Usize, order: usize) usize {
+            const p = (self.getLen() << 2) - (@as(usize, @intCast(log_bit + 2)) << (self.log_len - log_bit + 1));
+            const f = (log_bit + 1) * (index ^ (@as(usize, 1) << (self.log_len - log_bit)));
             return p + f + order;
         }
 
@@ -279,7 +288,7 @@ pub fn Buddy(comptime config: Config) type {
                 if (isPowerOfTwo(i)) {
                     log_len -= 1;
                 }
-                count += @as(usize, @intCast(@as(u1, @bitCast(self.getBitmap(i, log_len) and !self.getBitmap(i ^ 1, log_len)))));
+                count += @as(usize, @intCast(@as(u1, @bitCast(self.getFree(i, log_len) and !self.getFree(i ^ 1, log_len)))));
                 if (isPowerOfTwo(i + 1)) {
                     try std.fmt.format(writer, "Order {}: {} blocks\n", .{ log_len, count });
                     count = 0;
