@@ -28,7 +28,6 @@ const Command = enum {
     Reboot,
     ListFiles,
     GetFileContent,
-    DemoSimpleAlloc,
     ExecFileContent,
     DemoPageAlloc,
     DemoPageFree,
@@ -46,8 +45,6 @@ fn parseCommand(command: []const u8) Command {
         return Command.ListFiles;
     } else if (std.mem.eql(u8, command, "cat")) {
         return Command.GetFileContent;
-    } else if (std.mem.eql(u8, command, "demo")) {
-        return Command.DemoSimpleAlloc;
     } else if (std.mem.eql(u8, command, "exec")) {
         return Command.ExecFileContent;
     } else if (std.mem.eql(u8, command, "alloc")) {
@@ -61,10 +58,11 @@ fn parseCommand(command: []const u8) Command {
     }
 }
 
-fn execFile(content: []const u8) void {
-    const program_stack = startup_allocator.alloc(u8, 0x1000) catch {
+fn execFile(allocator: std.mem.Allocator, content: []const u8) void {
+    const program_stack = allocator.alloc(u8, 0x1000) catch {
         @panic("Out of Memory! No buffer for executing a file.");
     };
+    defer allocator.free(program_stack);
     const program_start_address: usize = @intFromPtr(content.ptr);
     const program_stack_address: usize = @intFromPtr(program_stack.ptr);
     _ = mini_uart_writer.print("User program at 0x{X} will be run with the stack address 0x{X}\n", .{ program_start_address, program_stack_address }) catch {};
@@ -84,11 +82,12 @@ fn execFile(content: []const u8) void {
 }
 
 fn simpleShell(allocator: std.mem.Allocator) void {
-    var buffer = startup_allocator.alloc(u8, 256) catch {
+    var buffer = allocator.alloc(u8, 256) catch {
         @panic("Out of Memory! No buffer for simple shell.");
     };
+    defer allocator.free(buffer);
 
-    var alloc_map = std.AutoHashMap(usize, []u8).init(startup_allocator);
+    var alloc_map = std.AutoHashMap(usize, []u8).init(allocator);
     defer alloc_map.deinit();
 
     while (true) {
@@ -108,7 +107,6 @@ fn simpleShell(allocator: std.mem.Allocator) void {
                 _ = mini_uart_writer.write("  reboot - Reboot the system\n") catch {};
                 _ = mini_uart_writer.write("  ls - List files in the initramfs\n") catch {};
                 _ = mini_uart_writer.write("  cat - Print the content of a file in the initramfs\n") catch {};
-                _ = mini_uart_writer.write("  demo - Run a simple allocator demo\n") catch {};
                 _ = mini_uart_writer.write("  exec - Execute a file in the initramfs\n") catch {};
                 _ = mini_uart_writer.write("  alloc - Run a page allocator demo\n") catch {};
                 _ = mini_uart_writer.write("  free - Run a page free demo\n") catch {};
@@ -123,11 +121,12 @@ fn simpleShell(allocator: std.mem.Allocator) void {
                 reboot.reset(100);
             },
             Command.ListFiles => {
-                const fs = cpio.listFiles(startup_allocator);
+                const fs = cpio.listFiles(allocator);
                 if (fs) |files| {
                     for (files) |file| {
                         _ = mini_uart_writer.print("{s}\n", .{file}) catch {};
                     }
+                    allocator.free(files);
                 }
             },
             Command.GetFileContent => {
@@ -140,30 +139,12 @@ fn simpleShell(allocator: std.mem.Allocator) void {
                     std.log.info("No such file", .{});
                 }
             },
-            Command.DemoSimpleAlloc => {
-                _ = mini_uart_writer.write("Length of Allocated Memory?: ") catch {};
-                recvlen = mini_uart_reader.read(buffer) catch 0;
-
-                const name_size = std.fmt.parseInt(u32, buffer[0..recvlen], 10) catch 0;
-                const demo_buffer = startup_allocator.alloc(u8, name_size) catch {
-                    continue;
-                };
-
-                _ = mini_uart_writer.write("Content: ") catch {};
-                recvlen = mini_uart_reader.read(demo_buffer) catch 0;
-
-                _ = mini_uart_writer.write("\n") catch {};
-                _ = mini_uart_writer.print("Buffer Address: 0x{X}\n", .{@intFromPtr(demo_buffer.ptr)}) catch {};
-                _ = mini_uart_writer.write("Buffer Content: ") catch {};
-                _ = mini_uart_writer.write(demo_buffer) catch {};
-                _ = mini_uart_writer.write("\n") catch {};
-            },
             Command.ExecFileContent => {
                 _ = mini_uart_writer.write("Filename: ") catch {};
                 recvlen = mini_uart_reader.read(buffer) catch 0;
                 const c = cpio.getFileContent(buffer[0..recvlen]);
                 if (c) |content| {
-                    execFile(content);
+                    execFile(allocator, content);
                 } else {
                     std.log.info("No such file", .{});
                 }
@@ -269,6 +250,8 @@ export fn main(dtb_address: usize) void {
     var da = DynamicAllocator.init(&fa);
 
     const allocator = da.allocator();
+
+    dtb.deinit(startup_allocator);
 
     simpleShell(allocator);
 }

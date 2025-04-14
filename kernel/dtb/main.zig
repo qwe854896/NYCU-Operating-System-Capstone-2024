@@ -17,6 +17,10 @@ pub fn init(allocator: std.mem.Allocator, dtb_address: usize) u32 {
     return dtb_size;
 }
 
+pub fn deinit(allocator: std.mem.Allocator) void {
+    dtb_root.deinit(allocator);
+}
+
 pub fn fdtTraverse(callbackFunc: fn (*dtb.Node) void) void {
     callbackFunc(dtb_root);
 }
