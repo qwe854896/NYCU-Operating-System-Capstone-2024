@@ -32,6 +32,7 @@ const Command = enum {
     ExecFileContent,
     DemoPageAlloc,
     DemoPageFree,
+    DemoPrintPageAlloc,
 };
 
 fn parseCommand(command: []const u8) Command {
@@ -53,6 +54,8 @@ fn parseCommand(command: []const u8) Command {
         return Command.DemoPageAlloc;
     } else if (std.mem.eql(u8, command, "free")) {
         return Command.DemoPageFree;
+    } else if (std.mem.eql(u8, command, "print")) {
+        return Command.DemoPrintPageAlloc;
     } else {
         return Command.None;
     }
@@ -109,6 +112,7 @@ fn simpleShell(allocator: std.mem.Allocator) void {
                 _ = mini_uart_writer.write("  exec - Execute a file in the initramfs\n") catch {};
                 _ = mini_uart_writer.write("  alloc - Run a page allocator demo\n") catch {};
                 _ = mini_uart_writer.write("  free - Run a page free demo\n") catch {};
+                _ = mini_uart_writer.write("  print - Print the address of allocated memory\n") catch {};
             },
             Command.None => {
                 _ = mini_uart_writer.write("Unknown command: ") catch {};
@@ -193,6 +197,15 @@ fn simpleShell(allocator: std.mem.Allocator) void {
                     _ = mini_uart_writer.print("Freed memory at address: 0x{X}\n", .{address}) catch {};
                 } else {
                     _ = mini_uart_writer.print("No such address: 0x{X}\n", .{address}) catch {};
+                }
+            },
+            Command.DemoPrintPageAlloc => {
+                var iter = alloc_map.iterator();
+                while (iter.next()) |item| {
+                    const address = item.key_ptr.*;
+                    const buf = item.value_ptr.*;
+                    _ = mini_uart_writer.print("Buffer Address: 0x{X}", .{address}) catch {};
+                    _ = mini_uart_writer.print("\tBuffer Size: 0x{X}\n", .{buf.len}) catch {};
                 }
             },
         }
