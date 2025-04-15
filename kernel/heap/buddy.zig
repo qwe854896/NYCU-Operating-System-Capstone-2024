@@ -48,6 +48,10 @@ pub fn Buddy(comptime config: Config) type {
             allocator.free(self.frees);
         }
 
+        pub fn getMetadata(self: *const Self) []u8 {
+            return @ptrCast(self.frees);
+        }
+
         pub fn alloc(self: *Self, len: usize) ?usize {
             const new_len = fixUp(len);
             const log_len = log2_int(usize, new_len);

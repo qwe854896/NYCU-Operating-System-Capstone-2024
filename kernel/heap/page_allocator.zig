@@ -46,7 +46,7 @@ pub fn PageAllocator(comptime config: Config) type {
                 .bytes = bytes[0..],
             };
 
-            const metadata: []u8 = @ptrCast(manager.frees);
+            const metadata: []u8 = @ptrCast(manager.getMetadata());
             const metadata_start = @intFromPtr(metadata.ptr);
 
             self.memory_reserve(bytes.len, fix_len);
