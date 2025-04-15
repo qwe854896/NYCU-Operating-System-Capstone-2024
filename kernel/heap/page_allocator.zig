@@ -94,7 +94,7 @@ pub fn PageAllocator(comptime config: Config) type {
             _ = return_address;
             const self: *Self = @ptrCast(@alignCast(context));
             if (config.verbose_log) {
-                log.info("Free 0x{X} at order {}, page 0x{X}.", .{ @intFromPtr(memory.ptr), log2_int(usize, fixUp(memory.len)) - log2_page_size, @intFromPtr(memory.ptr) >> log2_page_size });
+                log.info("Free 0x{X}, page 0x{X}.", .{ @intFromPtr(memory.ptr), @intFromPtr(memory.ptr) >> log2_page_size });
             }
             self.manager.free((@intFromPtr(memory.ptr) - @intFromPtr(self.bytes.ptr)) >> log2_page_size);
             if (config.verbose_log) {

@@ -30,7 +30,6 @@ const Command = enum {
     ExecFileContent,
     DemoPageAlloc,
     DemoPageFree,
-    DemoPrintPageAlloc,
 };
 
 fn parseCommand(command: []const u8) Command {
@@ -50,8 +49,6 @@ fn parseCommand(command: []const u8) Command {
         return Command.DemoPageAlloc;
     } else if (std.mem.eql(u8, command, "free")) {
         return Command.DemoPageFree;
-    } else if (std.mem.eql(u8, command, "print")) {
-        return Command.DemoPrintPageAlloc;
     } else {
         return Command.None;
     }
@@ -86,9 +83,6 @@ fn simpleShell(allocator: std.mem.Allocator) void {
     };
     defer allocator.free(buffer);
 
-    var alloc_map = std.AutoHashMap(usize, []u8).init(allocator);
-    defer alloc_map.deinit();
-
     while (true) {
         _ = mini_uart_writer.write("# ") catch {};
 
@@ -109,7 +103,6 @@ fn simpleShell(allocator: std.mem.Allocator) void {
                 _ = mini_uart_writer.write("  exec - Execute a file in the initramfs\n") catch {};
                 _ = mini_uart_writer.write("  alloc - Run a page allocator demo\n") catch {};
                 _ = mini_uart_writer.write("  free - Run a page free demo\n") catch {};
-                _ = mini_uart_writer.write("  print - Print the address of allocated memory\n") catch {};
             },
             Command.None => {
                 _ = mini_uart_writer.write("Unknown command: ") catch {};
@@ -158,10 +151,6 @@ fn simpleShell(allocator: std.mem.Allocator) void {
                     continue;
                 };
 
-                alloc_map.put(@intFromPtr(demo_buffer.ptr), demo_buffer) catch {
-                    @panic("Failed to put in map");
-                };
-
                 _ = mini_uart_writer.print("Buffer Address: 0x{X}\n", .{@intFromPtr(demo_buffer.ptr)}) catch {};
             },
             Command.DemoPageFree => {
@@ -169,24 +158,10 @@ fn simpleShell(allocator: std.mem.Allocator) void {
                 recvlen = mini_uart_reader.read(buffer) catch 0;
 
                 const address = std.fmt.parseInt(usize, buffer[2..recvlen], 16) catch 0;
-                const demo_buffer = alloc_map.get(address);
+                const db: []u8 = @as([*]u8, @ptrFromInt(address))[0..1];
 
-                if (demo_buffer) |db| {
-                    _ = alloc_map.remove(address);
-                    allocator.free(db);
-                    _ = mini_uart_writer.print("Freed memory at address: 0x{X}\n", .{address}) catch {};
-                } else {
-                    _ = mini_uart_writer.print("No such address: 0x{X}\n", .{address}) catch {};
-                }
-            },
-            Command.DemoPrintPageAlloc => {
-                var iter = alloc_map.iterator();
-                while (iter.next()) |item| {
-                    const address = item.key_ptr.*;
-                    const buf = item.value_ptr.*;
-                    _ = mini_uart_writer.print("Buffer Address: 0x{X}", .{address}) catch {};
-                    _ = mini_uart_writer.print("\tBuffer Size: 0x{X}\n", .{buf.len}) catch {};
-                }
+                allocator.free(db);
+                _ = mini_uart_writer.print("Freed memory at address: 0x{X}\n", .{address}) catch {};
             },
         }
     }

@@ -14,6 +14,12 @@ const Config = struct {
     verbose_log: bool = false,
 };
 
+const magic: usize = 0x1ab4de30deadbeaf;
+const Metadata = struct {
+    magic: usize,
+    class: usize,
+};
+
 pub fn DynamicAllocator(comptime config: Config) type {
     return struct {
         const Self = @This();
@@ -77,25 +83,34 @@ pub fn DynamicAllocator(comptime config: Config) type {
             }
 
             const slab = self.page_allocator.rawAlloc(slab_len, .fromByteUnits(slab_len), ra) orelse return null;
-            self.next_addrs[class] = @intFromPtr(slab) + slot_size;
+            self.next_addrs[class] = @intFromPtr(slab) + @max(slot_size, @sizeOf(Metadata));
+            defer self.next_addrs[class] += slot_size;
 
+            const metadata: *Metadata = @ptrFromInt(@intFromPtr(slab));
+            metadata.* = Metadata{
+                .magic = magic,
+                .class = class,
+            };
             if (config.verbose_log) {
-                log.info("Allocate 0x{X} at chunk size {d}.", .{ @intFromPtr(slab), slot_size });
+                log.info("Allocate 0x{X} at chunk size {d}.", .{ self.next_addrs[class], slot_size });
             }
 
-            return slab;
+            return @ptrFromInt(self.next_addrs[class]);
         }
 
         fn free(context: *anyopaque, memory: []u8, alignment: mem.Alignment, return_address: usize) void {
+            _ = alignment;
             _ = return_address;
 
             const self: *Self = @ptrCast(@alignCast(context));
 
-            const class = sizeClassIndex(memory.len, alignment);
+            const metadata: *Metadata = @ptrFromInt(mem.alignBackward(usize, @intFromPtr(memory.ptr), slab_len));
 
-            if (class >= size_class_count) {
+            if (metadata.*.magic != 0x1ab4de30deadbeaf) {
                 return self.page_allocator.free(memory);
             }
+
+            const class = metadata.*.class;
 
             if (config.verbose_log) {
                 log.info("Free 0x{X} at chunk size {d}.", .{ @intFromPtr(memory.ptr), slotSize(class) });
@@ -110,30 +125,32 @@ pub fn DynamicAllocator(comptime config: Config) type {
         fn resize(context: *anyopaque, memory: []u8, alignment: mem.Alignment, new_len: usize, return_address: usize) bool {
             _ = return_address;
             const self: *Self = @ptrCast(@alignCast(context));
-            const class = sizeClassIndex(memory.len, alignment);
+            const metadata: *Metadata = @ptrFromInt(mem.alignBackward(usize, @intFromPtr(memory.ptr), slab_len));
             const new_class = sizeClassIndex(new_len, alignment);
-            if (class >= size_class_count) {
+            if (metadata.*.magic != magic) {
                 if (new_class < size_class_count) return false;
                 _ = self.page_allocator.realloc(memory, new_len) catch {
                     return false;
                 };
                 return true;
             }
+            const class = metadata.*.class;
             return new_class == class;
         }
 
         fn remap(context: *anyopaque, memory: []u8, alignment: mem.Alignment, new_len: usize, return_address: usize) ?[*]u8 {
             _ = return_address;
             const self: *Self = @ptrCast(@alignCast(context));
-            const class = sizeClassIndex(memory.len, alignment);
+            const metadata: *Metadata = @ptrFromInt(mem.alignBackward(usize, @intFromPtr(memory.ptr), slab_len));
             const new_class = sizeClassIndex(new_len, alignment);
-            if (class >= size_class_count) {
+            if (metadata.*.magic != magic) {
                 if (new_class < size_class_count) return null;
                 const ret = self.page_allocator.realloc(memory, new_len) catch {
                     return null;
                 };
                 return @ptrCast(@constCast(&ret));
             }
+            const class = metadata.*.class;
             return if (new_class == class) memory.ptr else null;
         }
 
