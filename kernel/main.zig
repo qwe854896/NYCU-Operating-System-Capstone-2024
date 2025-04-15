@@ -223,7 +223,7 @@ export fn main(dtb_address: usize) void {
     };
     const mem: []allowzero u8 = @as([*]allowzero u8, @ptrFromInt(arm_memory.@"0"))[0..arm_memory.@"1"];
 
-    const buffer_len = mem.len >> page_allocator.log2_page_size;
+    const buffer_len = mem.len >> 7;
     const buffer_addr = std.mem.alignForward(usize, @intFromPtr(&_flash_img_end), 1 << page_allocator.log2_page_size);
     const buffer: []u8 = @as([*]u8, @ptrFromInt(buffer_addr))[0..buffer_len];
     var fba = std.heap.FixedBufferAllocator.init(buffer);
