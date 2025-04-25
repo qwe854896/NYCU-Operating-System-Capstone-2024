@@ -12,8 +12,8 @@ const dynamic_allocator = @import("heap/dynamic_allocator.zig");
 const mini_uart_reader = uart.mini_uart_reader;
 const mini_uart_writer = uart.mini_uart_writer;
 
-const PageAllocator = page_allocator.PageAllocator(.{ .verbose_log = true });
-const DynamicAllocator = dynamic_allocator.DynamicAllocator(.{ .verbose_log = true });
+const PageAllocator = page_allocator.PageAllocator(.{ .verbose_log = false });
+const DynamicAllocator = dynamic_allocator.DynamicAllocator(.{ .verbose_log = false });
 
 pub const std_options: std.Options = .{
     .log_level = .info,
