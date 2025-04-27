@@ -8,6 +8,7 @@ const dtb = @import("dtb/main.zig");
 const interrupt = @import("interrupt.zig");
 const page_allocator = @import("heap/page_allocator.zig");
 const dynamic_allocator = @import("heap/dynamic_allocator.zig");
+const sched = @import("sched.zig");
 
 const mini_uart_reader = uart.mini_uart_reader;
 const mini_uart_writer = uart.mini_uart_writer;
@@ -184,6 +185,24 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, _: ?
     while (true) {}
 }
 
+fn delay(time: u32) void {
+    var i: u32 = 0;
+    while (i < time) {
+        for (0..256) |_| {
+            asm volatile ("nop");
+        }
+        i += 1;
+    }
+}
+
+fn foo() void {
+    for (0..10) |i| {
+        _ = mini_uart_writer.print("Thread id: {} {}\n", .{ sched.currentThread().id, i }) catch {};
+        delay(1000000);
+        sched.schedule();
+    }
+}
+
 // Main function for the kernel
 export fn main(dtb_address: usize) void {
     gpio.init();
@@ -231,6 +250,11 @@ export fn main(dtb_address: usize) void {
 
     var da = DynamicAllocator.init(&fa);
     const allocator = da.allocator();
+
+    for (0..4) |_| {
+        sched.threadCreate(allocator, foo);
+    }
+    sched.idle(allocator);
 
     simpleShell(allocator);
 }
