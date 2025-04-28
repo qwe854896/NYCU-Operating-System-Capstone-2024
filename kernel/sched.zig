@@ -5,6 +5,8 @@ const context = @import("asm/context.zig");
 
 const ThreadContext = processor.ThreadContext;
 const Task = packed struct {
+    const Self = @This();
+
     thread_context: ThreadContext = .{ .cpu_context = .{} },
     id: u32,
     entry: usize,
@@ -13,6 +15,25 @@ const Task = packed struct {
     started: bool = false,
     ended: bool = false,
     allocator: *const std.mem.Allocator,
+
+    pub fn init(allocator: *const std.mem.Allocator, id: u32, entry: ?*const fn () void, stack_size: usize, started: bool) Self {
+        const stack = allocator.alignedAlloc(u8, 16, stack_size) catch {
+            @panic("Out of Memory! No buffer for thread stack.");
+        };
+        return .{
+            .id = id,
+            .entry = @intFromPtr(entry),
+            .stack = @intFromPtr(stack.ptr),
+            .stack_size = stack.len,
+            .started = started,
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *Self) void {
+        const stack: []u8 = @as([*]u8, @ptrFromInt(self.stack))[0..self.stack_size];
+        self.allocator.free(stack);
+    }
 };
 const DoublyLinkedList = std.DoublyLinkedList;
 const RunQueue = DoublyLinkedList(Task);
@@ -23,21 +44,11 @@ var run_queue = RunQueue{};
 pub fn threadCreate(allocator: std.mem.Allocator, entry: fn () void) void {
     pid_count += 1;
 
-    const stack = allocator.alignedAlloc(u8, 16, 0x8000) catch {
-        @panic("Out of Memory! No buffer for thread stack.");
-    };
-
     var thread = allocator.create(RunQueue.Node) catch {
         @panic("Out of Memory! No buffer for thread.");
     };
 
-    thread.data = .{
-        .id = pid_count,
-        .entry = @intFromPtr(&entry),
-        .stack = @intFromPtr(stack.ptr),
-        .stack_size = stack.len,
-        .allocator = &allocator,
-    };
+    thread.data = Task.init(&allocator, pid_count, entry, 0x8000, false);
 
     run_queue.append(thread);
 }
@@ -63,14 +74,7 @@ pub fn idle(allocator: std.mem.Allocator) void {
         @panic("Out of Memory! No buffer for thread.");
     };
 
-    thread.data = .{
-        .id = 0,
-        .entry = 0,
-        .stack = 0,
-        .stack_size = 0,
-        .started = true,
-        .allocator = &allocator,
-    };
+    thread.data = Task.init(&allocator, 0, null, 0, true);
 
     run_queue.append(thread);
 
@@ -115,6 +119,7 @@ fn killZombies() void {
     while (it) |node| {
         it = node.next;
         if (node.data.ended) {
+            node.data.deinit();
             node.data.allocator.destroy(node);
             run_queue.remove(node);
         }
