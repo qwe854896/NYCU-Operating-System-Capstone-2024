@@ -10,33 +10,42 @@ const Task = packed struct {
     thread_context: ThreadContext = .{ .cpu_context = .{} },
     id: u32,
     entry: usize,
-    stack: usize,
-    stack_size: usize,
+    kernel_stack: usize,
+    kernel_stack_size: usize,
+    user_stack: usize,
+    user_stack_size: usize,
     ended: bool = false,
     allocator: *const std.mem.Allocator,
 
     pub fn init(allocator: *const std.mem.Allocator, id: u32, entry: ?*const fn () void, stack_size: usize) Self {
-        const stack = allocator.alignedAlloc(u8, 16, stack_size) catch {
+        const kernel_stack = allocator.alignedAlloc(u8, 16, stack_size) catch {
+            @panic("Out of Memory! No buffer for thread stack.");
+        };
+        const user_stack = allocator.alignedAlloc(u8, 16, stack_size) catch {
             @panic("Out of Memory! No buffer for thread stack.");
         };
 
         var self = Self{
             .id = id,
             .entry = @intFromPtr(entry),
-            .stack = @intFromPtr(stack.ptr),
-            .stack_size = stack.len,
+            .kernel_stack = @intFromPtr(kernel_stack.ptr),
+            .kernel_stack_size = kernel_stack.len,
+            .user_stack = @intFromPtr(user_stack.ptr),
+            .user_stack_size = user_stack.len,
             .allocator = allocator,
         };
 
         self.thread_context.cpu_context.pc = @intFromPtr(&run);
-        self.thread_context.cpu_context.sp = @intFromPtr(stack.ptr) + stack.len;
+        self.thread_context.cpu_context.sp = @intFromPtr(kernel_stack.ptr) + kernel_stack.len;
 
         return self;
     }
 
     pub fn deinit(self: *Self) void {
-        const stack: []u8 = @as([*]u8, @ptrFromInt(self.stack))[0..self.stack_size];
-        self.allocator.free(stack);
+        const kernel_stack: []u8 = @as([*]u8, @ptrFromInt(self.kernel_stack))[0..self.kernel_stack_size];
+        self.allocator.free(kernel_stack);
+        const user_stack: []u8 = @as([*]u8, @ptrFromInt(self.user_stack))[0..self.user_stack_size];
+        self.allocator.free(user_stack);
     }
 };
 const DoublyLinkedList = std.DoublyLinkedList;
