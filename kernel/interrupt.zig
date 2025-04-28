@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = std.log.scoped(.interrupt);
 const mmio = @import("mmio.zig");
 const Register = mmio.Register;
 
@@ -26,10 +27,10 @@ export fn exceptionEntry() void {
           [arg2] "=r" (esr_el1),
     );
 
-    std.log.info("Exception:", .{});
-    std.log.info("  SPSR_EL1: 0x{X}", .{spsr_el1});
-    std.log.info("  ELR_EL1: 0x{X}", .{elr_el1});
-    std.log.info("  ESR_EL1: 0x{X}", .{esr_el1});
+    log.info("Exception:", .{});
+    log.info("  SPSR_EL1: 0x{b}", .{spsr_el1});
+    log.info("  ELR_EL1: 0x{X}", .{elr_el1});
+    log.info("  ESR_EL1: 0x{b}", .{esr_el1});
 }
 
 export fn coreTimerEntry() void {
@@ -48,8 +49,8 @@ export fn coreTimerEntry() void {
         : "x0"
     );
 
-    std.log.info("Core Timer Exception!", .{});
-    std.log.info("  {} seconds after booting...", .{cntpct_el0 / cntfrq_el0});
+    log.info("Core Timer Exception!", .{});
+    log.info("  {} seconds after booting...", .{cntpct_el0 / cntfrq_el0});
 }
 
 comptime {
