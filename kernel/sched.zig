@@ -12,22 +12,26 @@ const Task = packed struct {
     entry: usize,
     stack: usize,
     stack_size: usize,
-    started: bool = false,
     ended: bool = false,
     allocator: *const std.mem.Allocator,
 
-    pub fn init(allocator: *const std.mem.Allocator, id: u32, entry: ?*const fn () void, stack_size: usize, started: bool) Self {
+    pub fn init(allocator: *const std.mem.Allocator, id: u32, entry: ?*const fn () void, stack_size: usize) Self {
         const stack = allocator.alignedAlloc(u8, 16, stack_size) catch {
             @panic("Out of Memory! No buffer for thread stack.");
         };
-        return .{
+
+        var self = Self{
             .id = id,
             .entry = @intFromPtr(entry),
             .stack = @intFromPtr(stack.ptr),
             .stack_size = stack.len,
-            .started = started,
             .allocator = allocator,
         };
+
+        self.thread_context.cpu_context.pc = @intFromPtr(&run);
+        self.thread_context.cpu_context.sp = @intFromPtr(stack.ptr) + stack.len;
+
+        return self;
     }
 
     pub fn deinit(self: *Self) void {
@@ -41,40 +45,30 @@ const RunQueue = DoublyLinkedList(Task);
 var pid_count: u32 = 0;
 var run_queue = RunQueue{};
 
-pub fn threadCreate(allocator: std.mem.Allocator, entry: fn () void) void {
+pub fn threadCreate(allocator: *const std.mem.Allocator, entry: fn () void) void {
     pid_count += 1;
 
     var thread = allocator.create(RunQueue.Node) catch {
         @panic("Out of Memory! No buffer for thread.");
     };
 
-    thread.data = Task.init(&allocator, pid_count, entry, 0x8000, false);
+    thread.data = Task.init(allocator, pid_count, entry, 0x8000);
 
     run_queue.append(thread);
 }
 
 pub fn schedule() void {
-    var next_thread = &run_queue.first.?.data;
+    const next_task = &run_queue.first.?.data;
     run_queue.append(run_queue.popFirst().?);
-
-    if (!next_thread.started) {
-        const pc = @intFromPtr(&run);
-        const sp = next_thread.stack + next_thread.stack_size;
-
-        next_thread.started = true;
-        next_thread.thread_context.cpu_context.pc = pc;
-        next_thread.thread_context.cpu_context.sp = sp;
-    }
-
-    context.switchTo(context.getCurrent(), @intFromPtr(next_thread));
+    context.switchTo(context.getCurrent(), @intFromPtr(next_task));
 }
 
-pub fn idle(allocator: std.mem.Allocator) void {
+pub fn idle(allocator: *const std.mem.Allocator) void {
     var thread = allocator.create(RunQueue.Node) catch {
         @panic("Out of Memory! No buffer for thread.");
     };
 
-    thread.data = Task.init(&allocator, 0, null, 0, true);
+    thread.data = Task.init(allocator, 0, null, 0);
 
     run_queue.append(thread);
 
