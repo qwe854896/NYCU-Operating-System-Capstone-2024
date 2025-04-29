@@ -1,6 +1,7 @@
 /// Reference: https://zig.guide/standard-library/readers-and-writers/
 const std = @import("std");
 const mmio = @import("mmio.zig");
+const sched = @import("sched.zig");
 
 const Register = mmio.Register;
 
@@ -25,6 +26,20 @@ pub fn init() void {
     aux_mu_baud_reg.writeRaw(270); // Set baud rate to 115200 (270 divisor)
     aux_mu_iir_reg.writeRaw(6); // Clear FIFOs and set interrupt mode
     aux_mu_cntl_reg.writeRaw(3); // Enable transmitter and receiver
+}
+
+pub fn sysSend(byte: u8) void {
+    while ((aux_mu_lsr_reg.readRaw() & 0x20) == 0) {
+        sched.schedule();
+    }
+    aux_mu_io_reg.writeRaw(byte);
+}
+
+pub fn sysRecv() u8 {
+    while ((aux_mu_lsr_reg.readRaw() & 0x01) == 0) {
+        sched.schedule();
+    }
+    return @intCast(aux_mu_io_reg.readRaw() & 0xFF);
 }
 
 fn send(byte: u8) void {

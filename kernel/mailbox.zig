@@ -2,6 +2,7 @@
 
 const std = @import("std");
 const mmio = @import("mmio.zig");
+const sched = @import("sched.zig");
 
 const Register = mmio.Register;
 
@@ -27,10 +28,29 @@ const MailboxError = error{
     RequestFailed,
 };
 
-fn mailbox_call(mailbox: []u32) bool {
+pub fn sysMboxCall(ch: u8, mbox: usize) bool {
+    const addr = @as(u32, @intCast(mbox)) & ~@as(u32, 0xF);
+    const message = addr | ch;
+
+    while ((mailbox_status.readRaw() & mailbox_full) != 0) {
+        sched.schedule();
+    }
+
+    mailbox_write.writeRaw(message);
+
+    while ((mailbox_status.readRaw() & mailbox_empty) != 0) {
+        sched.schedule();
+    }
+
+    const resp = mailbox_read.readRaw();
+
+    return resp == message;
+}
+
+fn mailbox_call(ch: u8, mailbox: []u32) bool {
     // Combine the message address (upper 28 bits) with channel number (lower 4 bits)
     const addr = @as(u32, @intCast(@intFromPtr(mailbox.ptr))) & ~@as(u32, 0xF);
-    const message = addr | 8;
+    const message = addr | ch;
 
     // Check if Mailbox 0 status register’s full flag is set.
     while ((mailbox_status.readRaw() & mailbox_full) != 0) {
@@ -63,7 +83,7 @@ pub fn getBoardRevision() MailboxError!u32 {
     mailbox[5] = 0; // value buffer
     mailbox[6] = end_tag;
 
-    if (!mailbox_call(mailbox[0..])) {
+    if (!mailbox_call(8, mailbox[0..])) {
         return MailboxError.RequestFailed;
     }
 
@@ -82,7 +102,7 @@ pub fn getArmMemory() MailboxError!struct { u32, u32 } {
     mailbox[6] = 0; // value buffer
     mailbox[7] = end_tag;
 
-    if (!mailbox_call(mailbox[0..])) {
+    if (!mailbox_call(8, mailbox[0..])) {
         return MailboxError.RequestFailed;
     }
 
