@@ -55,8 +55,8 @@ pub const Task = packed struct {
         const user_stack: []u8 = @as([*]u8, @ptrFromInt(self.user_stack))[0..self.user_stack_size];
         self.allocator.free(user_stack);
         if (self.program_size != 0) {
-            const program: []u8 = @as([*]u8, @ptrFromInt(self.program))[0..self.program_size];
-            self.allocator.free(program);
+            // const program: []u8 = @as([*]u8, @ptrFromInt(self.program))[0..self.program_size];
+            // self.allocator.free(program);
         }
     }
 };
