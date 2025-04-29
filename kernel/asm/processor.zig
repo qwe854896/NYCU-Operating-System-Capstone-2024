@@ -55,4 +55,5 @@ pub const TrapFrame = packed struct {
     x28: usize,
     x29: usize,
     x30: usize,
+    elr_el1: usize, // only used for sigreturn
 };

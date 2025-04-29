@@ -131,3 +131,21 @@ pub fn kill(pid: i32) void {
         : "x0", "x8"
     );
 }
+
+// 8: void signal(int SIGNAL, void (*handler)())
+pub const sys_signal = 8;
+pub const sigkill = 9;
+
+// 9: void sigkill(int pid, int SIGNAL)
+pub const sys_sigkill = 9;
+
+// 20: void sigreturn()
+pub const sys_sigreturn = 20;
+pub extern fn sysSigreturn() void;
+comptime {
+    asm (
+        \\ sysSigreturn:
+        \\  mov x8, #20
+        \\  svc 0
+    );
+}

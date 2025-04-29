@@ -49,7 +49,11 @@ export fn exceptionEntry() void {
     }
 }
 
-export fn coreTimerEntry() void {
+export fn coreTimerEntry(sp: usize) void {
+    const trap_frame: *TrapFrame = @ptrFromInt(sp);
+    var self: *Task = @ptrFromInt(context.getCurrent());
+    self.trap_frame = trap_frame;
+
     sched.schedule();
 
     asm volatile (
@@ -108,8 +112,97 @@ fn sysMboxCallEntry(trap_frame: *TrapFrame) void {
     trap_frame.x0 = @intCast(@as(u1, @bitCast(retval)));
 }
 
+pub fn isSigkillPending() void {
+    const self: *Task = @ptrFromInt(context.getCurrent());
+
+    if (!self.has_sigkill) {
+        return;
+    }
+    self.has_sigkill = false;
+
+    var trap_frame = self.trap_frame.?;
+
+    // Save trap_frame onto the top of the user-space stack
+    var sp_el0: usize = undefined;
+    var elr_el1: usize = undefined;
+    asm volatile (
+        \\ mrs %[arg0], sp_el0
+        \\ mrs %[arg1], elr_el1
+        : [arg0] "=r" (sp_el0),
+          [arg1] "=r" (elr_el1),
+    );
+    trap_frame.elr_el1 = elr_el1;
+
+    log.info("Before sigreturn: 0x{x}", .{elr_el1});
+
+    sp_el0 -= @sizeOf(TrapFrame);
+    @as(*TrapFrame, @ptrFromInt(sp_el0)).* = trap_frame.*;
+
+    // move user-space stack, also update
+    asm volatile (
+        \\ msr sp_el0, %[arg0]
+        \\ msr elr_el1, %[arg1]
+        :
+        : [arg0] "r" (sp_el0),
+          [arg1] "r" (self.sigkill_handler),
+    );
+
+    trap_frame.x30 = @intFromPtr(&syscall.sysSigreturn); // lr
+}
+
+fn sysSigKillEntry(trap_frame: *TrapFrame) void {
+    const pid: u32 = @intCast(trap_frame.x0);
+    const signal: i32 = @intCast(trap_frame.x1);
+    const thread = sched.findThreadByPid(pid);
+    if (thread) |t| {
+        if (signal == syscall.sigkill) {
+            if (t.data.sigkill_handler == 0) {
+                sched.killThread(@intCast(trap_frame.x0));
+            } else {
+                t.data.has_sigkill = true;
+            }
+        }
+    }
+}
+
+fn sysSigreturnEntry(trap_frame: *TrapFrame) void {
+    var sp_el0: usize = undefined;
+    asm volatile (
+        \\ mrs %[arg0], sp_el0
+        : [arg0] "=r" (sp_el0),
+    );
+
+    trap_frame.* = @as(*TrapFrame, @ptrFromInt(sp_el0)).*;
+    sp_el0 += @sizeOf(TrapFrame);
+
+    const elr_el1 = trap_frame.elr_el1;
+    log.info("After sigreturn: 0x{x}", .{elr_el1});
+
+    asm volatile (
+        \\ msr sp_el0, %[arg0]
+        \\ msr elr_el1, %[arg1]
+        :
+        : [arg0] "r" (sp_el0),
+          [arg1] "r" (elr_el1),
+    );
+}
+
+fn sysSignalEntry(trap_frame: *TrapFrame) void {
+    const self: *Task = @ptrFromInt(context.getCurrent());
+    const signal: i32 = @intCast(trap_frame.x0);
+    const handler: usize = @intCast(trap_frame.x1);
+
+    log.info("Set signal {} handler of {} to 0x{}", .{ signal, self.id, handler });
+    if (signal == syscall.sigkill) {
+        self.sigkill_handler = handler;
+    }
+}
+
 export fn syscallEntry(sp: usize) void {
     const trap_frame: *TrapFrame = @ptrFromInt(sp);
+    var self: *Task = @ptrFromInt(context.getCurrent());
+    self.trap_frame = trap_frame;
+
     var elr_el1: usize = undefined;
 
     asm volatile (
@@ -138,6 +231,9 @@ export fn syscallEntry(sp: usize) void {
         syscall.sys_exit => sysExitEntry(),
         syscall.sys_kill => sysKillEntry(trap_frame),
         syscall.sys_exec => sysExecEntry(trap_frame),
+        syscall.sys_sigkill => sysSigKillEntry(trap_frame),
+        syscall.sys_signal => sysSignalEntry(trap_frame),
+        syscall.sys_sigreturn => sysSigreturnEntry(trap_frame),
         else => {
             log.info("Unknown syscall number: {}", .{trap_frame.x8});
             while (true) {
@@ -275,6 +371,7 @@ comptime {
     asm (
         \\ core_timer_handler:
         \\      save_all
+        \\      mov x0, sp
         \\      bl coreTimerEntry
         \\      load_all
         \\      eret

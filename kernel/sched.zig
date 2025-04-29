@@ -4,6 +4,7 @@ const processor = @import("asm/processor.zig");
 const context = @import("asm/context.zig");
 const syscall = @import("syscall.zig");
 const cpio = @import("cpio.zig");
+const interrupt = @import("interrupt.zig");
 
 const ThreadContext = processor.ThreadContext;
 const TrapFrame = processor.TrapFrame;
@@ -24,6 +25,9 @@ pub const Task = packed struct {
     program_size: usize = 0,
     ended: bool = false,
     allocator: *const std.mem.Allocator,
+    sigkill_handler: usize = 0,
+    has_sigkill: bool = false,
+    trap_frame: ?*TrapFrame = null,
 
     pub fn init(allocator: *const std.mem.Allocator, id: u32, entry: ?*const fn () void, stack_size: usize) Self {
         const kernel_stack = allocator.alignedAlloc(u8, 16, stack_size) catch {
@@ -107,6 +111,8 @@ pub fn forkThread(parent_trap_frame: *TrapFrame) void {
         child_trap_frame.x0 = 0;
         child_trap_frame.x29 = thread.data.user_stack + (parent_trap_frame.x29 - self.user_stack);
 
+        thread.data.sigkill_handler = self.sigkill_handler;
+
         // Copy Kernel Context
         thread.data.thread_context.cpu_context = self.thread_context.cpu_context;
 
@@ -157,6 +163,7 @@ pub fn schedule() void {
     const next_task = &run_queue.first.?.data;
     run_queue.append(run_queue.popFirst().?);
     context.switchTo(context.getCurrent(), @intFromPtr(next_task));
+    interrupt.isSigkillPending();
 }
 
 pub fn idle(allocator: *const std.mem.Allocator) void {
@@ -214,21 +221,29 @@ pub fn endThread() noreturn {
     }
 }
 
+pub fn findThreadByPid(pid: u32) ?*RunQueue.Node {
+    var it = run_queue.first;
+    while (it) |node| {
+        it = node.next;
+        if (node.data.id == pid) {
+            return node;
+        }
+    }
+    return null;
+}
+
 pub fn killThread(pid: u32) void {
     const self: *Task = @ptrFromInt(context.getCurrent());
     if (pid == self.id) {
         endThread();
     }
 
-    var it = run_queue.first;
-    while (it) |node| {
-        it = node.next;
-        if (node.data.id == pid) {
-            log.info("Thread {} ended!", .{node.data.id});
-            run_queue.remove(node);
-            node.data.deinit();
-            node.data.allocator.destroy(node);
-        }
+    const thread = findThreadByPid(pid);
+    if (thread) |t| {
+        log.info("Thread {} ended!", .{t.data.id});
+        run_queue.remove(t);
+        t.data.deinit();
+        t.data.allocator.destroy(t);
     }
 }
 
