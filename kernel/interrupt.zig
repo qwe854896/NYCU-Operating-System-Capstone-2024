@@ -1,7 +1,16 @@
 const std = @import("std");
 const log = std.log.scoped(.interrupt);
 const mmio = @import("mmio.zig");
+const processor = @import("asm/processor.zig");
+const context = @import("asm/context.zig");
+const syscall = @import("syscall.zig");
+const sched = @import("sched.zig");
+const uart = @import("uart.zig");
+const mailbox = @import("mailbox.zig");
+
 const Register = mmio.Register;
+const TrapFrame = processor.TrapFrame;
+const Task = sched.Task;
 
 const base_address = mmio.base_address + 0xB000;
 
@@ -34,23 +43,101 @@ export fn exceptionEntry() void {
 }
 
 export fn coreTimerEntry() void {
-    var cntpct_el0: usize = undefined;
-    var cntfrq_el0: usize = undefined;
+    sched.schedule();
 
     asm volatile (
-        \\ mrs %[arg0], cntpct_el0
-        \\ mrs %[arg1], cntfrq_el0
-        \\ mov x0, 2
-        \\ mul x0, x0, %[arg1]
+        \\ mrs x0, cntfrq_el0
+        \\ lsr x0, x0, #5
         \\ msr cntp_tval_el0, x0
-        : [arg0] "=r" (cntpct_el0),
-          [arg1] "=r" (cntfrq_el0),
-        :
-        : "x0"
+        ::: "x0");
+}
+
+fn sysExitEntry() noreturn {
+    sched.endThread();
+}
+
+fn sysGetpidEntry(trap_frame: *TrapFrame) void {
+    const self: *Task = @ptrFromInt(context.getCurrent());
+    trap_frame.x0 = self.id;
+}
+
+fn sysUartReadEntry(trap_frame: *TrapFrame) void {
+    var buf: []u8 = @as([*]u8, @ptrFromInt(trap_frame.x0))[0..trap_frame.x1];
+    var i: usize = 0;
+    while (i < trap_frame.x1) : (i += 1) {
+        buf[i] = uart.sysRecv();
+    }
+    trap_frame.x0 = i;
+}
+
+fn sysUartwriteEntry(trap_frame: *TrapFrame) void {
+    if (trap_frame.x0 == 0) {
+        trap_frame.x0 = @bitCast(@as(i64, -1));
+        return;
+    }
+    const buf: []const u8 = @as([*]const u8, @ptrFromInt(trap_frame.x0))[0..trap_frame.x1];
+    var i: usize = 0;
+    while (i < trap_frame.x1) : (i += 1) {
+        uart.sysSend(buf[i]);
+    }
+    trap_frame.x0 = i;
+}
+
+fn sysForkEntry(trap_frame: *TrapFrame) void {
+    sched.forkThread(trap_frame);
+}
+
+fn sysKillEntry(trap_frame: *TrapFrame) void {
+    sched.killThread(@intCast(trap_frame.x0));
+}
+
+fn sysExecEntry(trap_frame: *TrapFrame) void {
+    const name: [:0]const u8 = std.mem.span(@as([*:0]const u8, @ptrFromInt(trap_frame.x0)));
+    sched.execThread(trap_frame, name);
+}
+
+fn sysMboxCallEntry(trap_frame: *TrapFrame) void {
+    const retval = mailbox.sysMboxCall(@intCast(trap_frame.x0), trap_frame.x1);
+    trap_frame.x0 = @intCast(@as(u1, @bitCast(retval)));
+}
+
+export fn syscallEntry(sp: usize) void {
+    const trap_frame: *TrapFrame = @ptrFromInt(sp);
+    var elr_el1: usize = undefined;
+
+    asm volatile (
+        \\ mrs %[arg0], elr_el1
+        : [arg0] "=r" (elr_el1),
     );
 
-    log.info("Core Timer Exception!", .{});
-    log.info("  {} seconds after booting...", .{cntpct_el0 / cntfrq_el0});
+    // mrs x0, CurrentEL
+    const inst: *u32 = @ptrFromInt(elr_el1);
+    if (inst.* == 0xd5384240) {
+        asm volatile (
+            \\ msr elr_el1, %[arg0]
+            :
+            : [arg0] "r" (elr_el1 + 4),
+        );
+        trap_frame.x0 = 0 << 2;
+        return;
+    }
+
+    switch (trap_frame.x8) {
+        syscall.sys_getpid => sysGetpidEntry(trap_frame),
+        syscall.sys_fork => sysForkEntry(trap_frame),
+        syscall.sys_uartread => sysUartReadEntry(trap_frame),
+        syscall.sys_uartwrite => sysUartwriteEntry(trap_frame),
+        syscall.sys_mbox_call => sysMboxCallEntry(trap_frame),
+        syscall.sys_exit => sysExitEntry(),
+        syscall.sys_kill => sysKillEntry(trap_frame),
+        syscall.sys_exec => sysExecEntry(trap_frame),
+        else => {
+            log.info("Unknown syscall number: {}", .{trap_frame.x8});
+            while (true) {
+                asm volatile ("nop");
+            }
+        },
+    }
 }
 
 comptime {
@@ -75,7 +162,11 @@ comptime {
         \\      mov x1, 1
         \\      msr cntp_ctl_el0, x1 // enable
         \\      mrs x1, cntfrq_el0
-        \\      msr cntp_tval_el0, x1 // set expired time
+        \\      lsr x1, x1, #5
+        \\      msr cntp_tval_el0, x1
+        \\      mrs x1, cntkctl_el1
+        \\      orr x1, x1, #1
+        \\      msr cntkctl_el1, x1
         \\      mov x1, 2
         \\      ldr x2, =0x40000040 // CORE0_TIMER_IRQ_CTRL
         \\      str w1, [x2] // unmask timer interrupt
@@ -103,7 +194,7 @@ comptime {
         \\      b exception_handler
         \\      .align 7
         \\
-        \\      b exception_handler
+        \\      b syscall_handler
         \\      .align 7
         \\      b core_timer_handler
         \\      .align 7
@@ -178,6 +269,15 @@ comptime {
         \\ core_timer_handler:
         \\      save_all
         \\      bl coreTimerEntry
+        \\      load_all
+        \\      eret
+    );
+
+    asm (
+        \\ syscall_handler:
+        \\      save_all
+        \\      mov x0, sp
+        \\      bl syscallEntry
         \\      load_all
         \\      eret
     );

@@ -2,9 +2,15 @@ const std = @import("std");
 const log = std.log.scoped(.sched);
 const processor = @import("asm/processor.zig");
 const context = @import("asm/context.zig");
+const syscall = @import("syscall.zig");
+const cpio = @import("cpio.zig");
 
 const ThreadContext = processor.ThreadContext;
-const Task = packed struct {
+const TrapFrame = processor.TrapFrame;
+const DoublyLinkedList = std.DoublyLinkedList;
+const RunQueue = DoublyLinkedList(Task);
+
+pub const Task = packed struct {
     const Self = @This();
 
     thread_context: ThreadContext = .{ .cpu_context = .{} },
@@ -14,6 +20,8 @@ const Task = packed struct {
     kernel_stack_size: usize,
     user_stack: usize,
     user_stack_size: usize,
+    program: usize = 0,
+    program_size: usize = 0,
     ended: bool = false,
     allocator: *const std.mem.Allocator,
 
@@ -35,8 +43,8 @@ const Task = packed struct {
             .allocator = allocator,
         };
 
-        self.thread_context.cpu_context.pc = @intFromPtr(&run);
-        self.thread_context.cpu_context.sp = @intFromPtr(kernel_stack.ptr) + kernel_stack.len;
+        self.thread_context.cpu_context.pc = @intFromPtr(&startThread);
+        self.thread_context.cpu_context.sp = self.kernel_stack + self.kernel_stack_size;
 
         return self;
     }
@@ -46,15 +54,17 @@ const Task = packed struct {
         self.allocator.free(kernel_stack);
         const user_stack: []u8 = @as([*]u8, @ptrFromInt(self.user_stack))[0..self.user_stack_size];
         self.allocator.free(user_stack);
+        if (self.program_size != 0) {
+            const program: []u8 = @as([*]u8, @ptrFromInt(self.program))[0..self.program_size];
+            self.allocator.free(program);
+        }
     }
 };
-const DoublyLinkedList = std.DoublyLinkedList;
-const RunQueue = DoublyLinkedList(Task);
 
 var pid_count: u32 = 0;
 var run_queue = RunQueue{};
 
-pub fn threadCreate(allocator: *const std.mem.Allocator, entry: fn () void) void {
+pub fn createThread(allocator: *const std.mem.Allocator, entry: fn () void) void {
     pid_count += 1;
 
     var thread = allocator.create(RunQueue.Node) catch {
@@ -64,6 +74,83 @@ pub fn threadCreate(allocator: *const std.mem.Allocator, entry: fn () void) void
     thread.data = Task.init(allocator, pid_count, entry, 0x8000);
 
     run_queue.append(thread);
+}
+
+pub fn forkThread(parent_trap_frame: *TrapFrame) void {
+    const self: *volatile Task = @ptrFromInt(context.getCurrent());
+
+    pid_count += 1;
+    var thread = self.allocator.create(RunQueue.Node) catch {
+        @panic("Out of Memory! No buffer for forking a thread.");
+    };
+
+    thread.data = Task.init(self.allocator, pid_count, null, self.user_stack_size);
+
+    const parent_kernel_stack: []u8 = @as([*]u8, @ptrFromInt(self.kernel_stack))[0..self.kernel_stack_size];
+    const parent_user_stack: []u8 = @as([*]u8, @ptrFromInt(self.user_stack))[0..self.user_stack_size];
+    const child_kernel_stack: []u8 = @as([*]u8, @ptrFromInt(thread.data.kernel_stack))[0..thread.data.kernel_stack_size];
+    const child_user_stack: []u8 = @as([*]u8, @ptrFromInt(thread.data.user_stack))[0..thread.data.user_stack_size];
+
+    // Copy Stack
+    @memcpy(child_kernel_stack, parent_kernel_stack);
+    @memcpy(child_user_stack, parent_user_stack);
+
+    // Handle Parent TrapFrame
+    parent_trap_frame.x0 = thread.data.id;
+
+    context.switchTo(context.getCurrent(), context.getCurrent());
+
+    const new_self: *volatile Task = @ptrFromInt(context.getCurrent());
+    if (@intFromPtr(self) == @intFromPtr(new_self)) {
+        // Handle Child TrapFrame
+        var child_trap_frame: *TrapFrame = @ptrFromInt(thread.data.kernel_stack + (@intFromPtr(parent_trap_frame) - self.kernel_stack));
+        child_trap_frame.x0 = 0;
+        child_trap_frame.x29 = thread.data.user_stack + (parent_trap_frame.x29 - self.user_stack);
+
+        // Copy Kernel Context
+        thread.data.thread_context.cpu_context = self.thread_context.cpu_context;
+
+        // Handle Child Context
+        thread.data.thread_context.cpu_context.fp = thread.data.kernel_stack + (self.thread_context.cpu_context.fp - self.kernel_stack);
+        thread.data.thread_context.cpu_context.sp = thread.data.kernel_stack + (self.thread_context.cpu_context.sp - self.kernel_stack);
+        thread.data.thread_context.cpu_context.sp_el0 = thread.data.user_stack + (self.thread_context.cpu_context.sp_el0 - self.user_stack);
+
+        run_queue.append(thread);
+    }
+}
+
+pub fn execThread(trap_frame: *TrapFrame, name: []const u8) void {
+    const self: *volatile Task = @ptrFromInt(context.getCurrent());
+    const p = cpio.getFileContent(name);
+
+    if (p) |program| {
+        if (self.program_size != 0) {
+            // const old_program: []u8 = @as([*]u8, @ptrFromInt(self.program))[0..self.program_size];
+            // self.allocator.free(old_program);
+        }
+
+        const new_program = self.allocator.alignedAlloc(u8, 16, program.len) catch {
+            @panic("Out of Memory! No buffer for new program.");
+        };
+        std.log.info("New program address: 0x{X}", .{@intFromPtr(new_program.ptr)});
+        @memcpy(new_program, program);
+
+        self.program = @intFromPtr(new_program.ptr);
+        self.program_size = new_program.len;
+        self.entry = @intFromPtr(new_program.ptr);
+
+        asm volatile (
+            \\ mov sp, %[arg0]
+            \\ br %[arg1]
+            :
+            : [arg0] "r" (self.kernel_stack + self.kernel_stack_size),
+              [arg1] "r" (@intFromPtr(&startThread)),
+        );
+
+        unreachable;
+    } else {
+        trap_frame.x0 = @bitCast(@as(i64, -1));
+    }
 }
 
 pub fn schedule() void {
@@ -92,28 +179,58 @@ pub fn idle(allocator: *const std.mem.Allocator) void {
     }
 }
 
-pub fn currentThread() Task {
-    const thread: *Task = @ptrFromInt(context.getCurrent());
-    return thread.*;
-}
-
-fn run() void {
+fn startThread() void {
     const self: *Task = @ptrFromInt(context.getCurrent());
 
     asm volatile (
-        \\      blr %[arg0]
+        \\ ldr lr, =user_thread_get_back_here
+        \\ mov x1, 0x0
+        \\ msr spsr_el1, x1
+        \\ mov x1, %[arg0]
+        \\ msr elr_el1, x1
+        \\ mov x1, %[arg1]
+        \\ msr sp_el0, x1
+        \\ eret
         :
         : [arg0] "r" (self.entry),
+          [arg1] "r" (self.user_stack + self.user_stack_size),
+        : "x1"
     );
 
-    if (@intFromPtr(self) != context.getCurrent()) {
-        @panic("Current thread is not the same as the one running!");
-    }
+    asm volatile (
+        \\ user_thread_get_back_here:
+    );
 
-    self.ended = true;
+    syscall.exit(0);
 
     while (true) {
+        asm volatile ("nop");
+    }
+}
+
+pub fn endThread() noreturn {
+    const self: *Task = @ptrFromInt(context.getCurrent());
+    self.ended = true;
+    while (true) {
         schedule();
+    }
+}
+
+pub fn killThread(pid: u32) void {
+    const self: *Task = @ptrFromInt(context.getCurrent());
+    if (pid == self.id) {
+        endThread();
+    }
+
+    var it = run_queue.first;
+    while (it) |node| {
+        it = node.next;
+        if (node.data.id == pid) {
+            log.info("Thread {} ended!", .{node.data.id});
+            run_queue.remove(node);
+            node.data.deinit();
+            node.data.allocator.destroy(node);
+        }
     }
 }
 
