@@ -171,8 +171,6 @@ pub fn idle(allocator: *const std.mem.Allocator) void {
     const ctx = @intFromPtr(&thread.data);
     context.switchTo(ctx, ctx);
 
-    log.info("Idle thread context address: 0x{X}", .{ctx});
-
     while (true) {
         killZombies();
         schedule();

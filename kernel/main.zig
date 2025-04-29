@@ -176,16 +176,21 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, _: ?
     std.log.err("{s}", .{msg});
 
     if (error_return_trace) |trace| {
-        for (trace.instruction_addresses) |address| {
+        for (trace.instruction_addresses, 0..) |address, level| {
             if (address == 0) {
                 break;
             }
-            std.log.err("0x{X}", .{address});
+            std.log.err("#{}: 0x{X}", .{ level, address });
         }
     }
 
-    reboot.reset(100);
-    while (true) {}
+    const self: *Task = @ptrFromInt(context.getCurrent());
+
+    // reboot.reset(100);
+    while (true) {
+        self.ended = true;
+        sched.schedule();
+    }
 }
 
 fn delay(time: u32) void {

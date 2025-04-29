@@ -36,10 +36,17 @@ export fn exceptionEntry() void {
           [arg2] "=r" (esr_el1),
     );
 
+    const self: *Task = @ptrFromInt(context.getCurrent());
+    log.info("Exception occurred! tid: {}", .{self.id});
+
     log.info("Exception:", .{});
-    log.info("  SPSR_EL1: 0x{b}", .{spsr_el1});
+    log.info("  SPSR_EL1: 0b{b:0>32}", .{spsr_el1});
     log.info("  ELR_EL1: 0x{X}", .{elr_el1});
-    log.info("  ESR_EL1: 0x{b}", .{esr_el1});
+    log.info("  ESR_EL1: 0b{b:0>32}", .{esr_el1});
+
+    while (true) {
+        asm volatile ("nop");
+    }
 }
 
 export fn coreTimerEntry() void {
