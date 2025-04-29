@@ -9,12 +9,15 @@ const interrupt = @import("interrupt.zig");
 const page_allocator = @import("heap/page_allocator.zig");
 const dynamic_allocator = @import("heap/dynamic_allocator.zig");
 const sched = @import("sched.zig");
+const syscall = @import("syscall.zig");
+const context = @import("asm/context.zig");
 
 const mini_uart_reader = uart.mini_uart_reader;
 const mini_uart_writer = uart.mini_uart_writer;
 
 const PageAllocator = page_allocator.PageAllocator(.{ .verbose_log = false });
 const DynamicAllocator = dynamic_allocator.DynamicAllocator(.{ .verbose_log = false });
+const Task = sched.Task;
 
 pub const std_options: std.Options = .{
     .log_level = .info,
@@ -195,12 +198,65 @@ fn delay(time: u32) void {
     }
 }
 
+fn printf(comptime format: []const u8, args: anytype) void {
+    var buf: [16384]u8 = undefined;
+    const slice = std.fmt.bufPrint(&buf, format, args) catch {
+        @panic("Buffer overflow!");
+    };
+    for (slice, 0..) |_, i| {
+        if (slice[i] == '\n') {
+            _ = syscall.uartwrite("\n\r", 1);
+        } else {
+            _ = syscall.uartwrite(slice[i .. i + 1], 1);
+        }
+    }
+}
+
 fn foo() void {
     for (0..10) |i| {
-        _ = mini_uart_writer.print("Thread id: {} {}\n", .{ sched.currentThread().id, i }) catch {};
+        printf("Thread id: {} {}\n", .{ syscall.getpid(), i });
         delay(1000000);
-        sched.schedule();
     }
+}
+
+fn fork_test() void {
+    printf("\nFork Test, pid {}\n", .{syscall.getpid()});
+    var cnt: i32 = 1;
+    var ret: i32 = 0;
+    ret = syscall.fork();
+    if (ret == 0) { // child
+        var cur_sp: i64 = undefined;
+        asm volatile ("mov %[arg0], sp"
+            : [arg0] "=r" (cur_sp),
+        );
+        printf("first child pid: {}, cnt: {}, ptr: {x}, sp : {x}\n", .{ syscall.getpid(), cnt, &cnt, cur_sp });
+        cnt += 1;
+
+        ret = syscall.fork();
+        if (ret != 0) {
+            asm volatile ("mov %[arg0], sp"
+                : [arg0] "=r" (cur_sp),
+            );
+            printf("first child pid: {}, cnt: {}, ptr: {x}, sp : {x}\n", .{ syscall.getpid(), cnt, &cnt, cur_sp });
+        } else {
+            while (cnt < 5) {
+                asm volatile ("mov %[arg0], sp"
+                    : [arg0] "=r" (cur_sp),
+                );
+                printf("second child pid: {}, cnt: {}, ptr: {x}, sp : {x}\n", .{ syscall.getpid(), cnt, &cnt, cur_sp });
+                delay(1000000);
+                cnt += 1;
+            }
+        }
+        syscall.exit(0);
+    } else {
+        printf("parent here, pid {}, child {}\n", .{ syscall.getpid(), ret });
+    }
+}
+
+fn runSyscallImg() void {
+    _ = syscall.exec("syscall.img", null);
+    syscall.exit(-1);
 }
 
 // Main function for the kernel
@@ -251,10 +307,8 @@ export fn main(dtb_address: usize) void {
     var da = DynamicAllocator.init(&fa);
     const allocator = da.allocator();
 
-    for (0..4) |_| {
-        sched.threadCreate(allocator, foo);
-    }
-    sched.idle(allocator);
+    sched.createThread(&allocator, runSyscallImg);
+    sched.idle(&allocator);
 
     simpleShell(allocator);
 }
