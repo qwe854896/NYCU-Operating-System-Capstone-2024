@@ -122,9 +122,10 @@ fn killZombies() void {
     while (it) |node| {
         it = node.next;
         if (node.data.ended) {
+            log.info("Thread {} ended!", .{node.data.id});
+            run_queue.remove(node);
             node.data.deinit();
             node.data.allocator.destroy(node);
-            run_queue.remove(node);
         }
     }
 }
