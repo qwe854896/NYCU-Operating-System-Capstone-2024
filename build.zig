@@ -1,99 +1,133 @@
 const std = @import("std");
+const Build = std.Build;
+const Target = std.Target;
+const ArrayList = std.ArrayList;
+const OptimizeMode = std.builtin.OptimizeMode;
+const ResolvedTarget = Build.ResolvedTarget;
 
-pub fn build(b: *std.Build) !void {
-    const ARCH = "aarch64";
-    const MODEL = "raspi3b";
-    const BOOTLOADER_NAME = "bootloader";
-    const KERNEL_NAME = "kernel8";
-    const QEMU = "qemu-system-" ++ ARCH;
-
-    const target = b.resolveTargetQuery(std.Target.Query.parse(.{
-        .arch_os_abi = "aarch64-freestanding-eabi",
-        .cpu_features = "cortex_a53+strict_align",
-    }) catch @panic("failed to obtain platform target"));
+pub fn build(b: *Build) !void {
+    const bootloader_mode = b.option(bool, "bootloader", "Enable bootloader chainloading") orelse false;
+    const target = setupAArch64Target(b);
     const optimize = b.standardOptimizeOption(.{});
 
-    const kernel_elf = b.addExecutable(.{
-        .name = KERNEL_NAME ++ ".elf",
-        .root_source_file = b.path("kernel/main.zig"),
-        .linkage = .static,
-        .link_libc = false,
+    const kernel = addStaticExecutable(b, .{
+        .name = "kernel8.elf",
+        .root_source = "kernel/main.zig",
+        .linker_script = "kernel/linker.ld",
         .target = target,
         .optimize = optimize,
     });
-    kernel_elf.setLinkerScript(b.path("kernel/linker.ld"));
-    b.installArtifact(kernel_elf);
 
-    const kernel_bin = kernel_elf.addObjCopy(.{ .format = .bin });
-
-    const kernel_img_name = KERNEL_NAME ++ ".img";
-    const kernel_img = b.addInstallBinFile(kernel_bin.getOutput(), kernel_img_name);
-
-    const bootloader_elf = b.addExecutable(.{
-        .name = BOOTLOADER_NAME ++ ".elf",
-        .root_source_file = b.path("bootloader/main.zig"),
-        .linkage = .static,
-        .link_libc = false,
+    const bootloader = addStaticExecutable(b, .{
+        .name = "bootloader.elf",
+        .root_source = "bootloader/main.zig",
+        .linker_script = "bootloader/linker.ld",
         .target = target,
         .optimize = optimize,
     });
-    bootloader_elf.setLinkerScript(b.path("bootloader/linker.ld"));
-    b.installArtifact(bootloader_elf);
 
-    const bootloader_bin = bootloader_elf.addObjCopy(.{ .format = .bin });
+    b.installArtifact(kernel);
+    if (bootloader_mode) b.installArtifact(bootloader);
 
-    const bootloader_img_name = BOOTLOADER_NAME ++ ".img";
-    const bootloader_img = b.addInstallBinFile(bootloader_bin.getOutput(), bootloader_img_name);
+    const artifacts = .{
+        .kernel = kernel,
+        .bootloader = bootloader,
+    };
+    try setupExecutionSteps(b, artifacts, bootloader_mode);
+}
 
-    var default_step = b.step("default", "Override the default step");
-    default_step.dependOn(b.getInstallStep());
-    default_step.dependOn(&kernel_img.step);
-    default_step.dependOn(&bootloader_img.step);
+fn setupAArch64Target(b: *Build) ResolvedTarget {
+    const query = Target.Query.parse(.{
+        .arch_os_abi = "aarch64-freestanding-eabi",
+        .cpu_features = "cortex_a53+strict_align",
+    }) catch @panic("Invalid target query");
 
-    b.default_step = default_step;
+    return b.resolveTargetQuery(query);
+}
 
-    const kernel_img_path = b.getInstallPath(.bin, kernel_img_name);
-    const bootloader_img_path = b.getInstallPath(.bin, bootloader_img_name);
-    _ = bootloader_img_path;
+fn addStaticExecutable(b: *Build, options: struct {
+    name: []const u8,
+    root_source: []const u8,
+    linker_script: []const u8,
+    target: ResolvedTarget,
+    optimize: OptimizeMode,
+}) *Build.Step.Compile {
+    const exe = b.addExecutable(.{
+        .name = options.name,
+        .root_source_file = b.path(options.root_source),
+        .target = options.target,
+        .optimize = options.optimize,
+        .linkage = .static,
+        .link_libc = false,
+    });
+    exe.setLinkerScript(b.path(options.linker_script));
+    return exe;
+}
 
-    var qemu_args = std.ArrayList([]const u8).init(b.allocator);
-    defer qemu_args.deinit();
-    try qemu_args.appendSlice(&.{
-        QEMU,
+fn setupExecutionSteps(
+    b: *Build,
+    artifacts: anytype,
+    bootloader_mode: bool,
+) !void {
+    const kernel_img = b.addInstallBinFile(artifacts.kernel.addObjCopy(.{ .format = .bin }).getOutput(), "kernel8.img");
+    const bootloader_img = b.addInstallBinFile(artifacts.bootloader.addObjCopy(.{ .format = .bin }).getOutput(), "bootloader.img");
+
+    const base_args = try buildQemuArgs(
+        b,
+        b.getInstallPath(.bin, if (bootloader_mode) bootloader_img.dest_rel_path else kernel_img.dest_rel_path),
+        if (bootloader_mode) "pty" else "stdio",
+    );
+    defer base_args.deinit();
+
+    const install_image_step = b.step("install-image", "Install images");
+    install_image_step.dependOn(&kernel_img.step);
+    if (bootloader_mode) install_image_step.dependOn(&bootloader_img.step);
+
+    try addQemuSteps(b, base_args, install_image_step);
+}
+
+fn buildQemuArgs(b: *Build, kernel_path: []const u8, serial_mode: []const u8) !ArrayList([]const u8) {
+    var args = ArrayList([]const u8).init(b.allocator);
+    try args.appendSlice(&.{
+        "qemu-system-aarch64",
         "-M",
-        MODEL,
-        "-display",
-        "none",
+        "raspi3b",
         "-serial",
         "null",
         "-serial",
-        // "pty", // if you want to test bootloader
-        "stdio",
+        serial_mode,
         "-initrd",
-        // "assets/initramfs.cpio",
         "assets/lab05/initramfs.cpio",
         "-dtb",
         "assets/bcm2710-rpi-3-b-plus.dtb",
         "-kernel",
-        // bootloader_img_path, // if you want to test bootloader
-        kernel_img_path,
-        "-display",
-        "cocoa",
+        kernel_path,
     });
+    return args;
+}
 
-    var current_qemu_args = try qemu_args.clone();
-    const qemu_command = b.addSystemCommand(try current_qemu_args.toOwnedSlice());
+fn addQemuSteps(
+    b: *Build,
+    base_args: ArrayList([]const u8),
+    install_image_step: *Build.Step,
+) !void {
+    // Run configuration
+    const run_cmd = b.addSystemCommand(base_args.items);
+    run_cmd.step.dependOn(install_image_step);
 
-    const qemu_step = b.step("run", "Run in qemu");
-    qemu_step.dependOn(&qemu_command.step);
+    const run_step = b.step("run", "Execute in QEMU");
+    run_step.dependOn(&run_cmd.step);
 
-    current_qemu_args = try qemu_args.clone();
-    try current_qemu_args.appendSlice(&.{
-        "-S",
-        "-s",
-    });
-    const qemu_debug_command = b.addSystemCommand(try current_qemu_args.toOwnedSlice());
+    // Debug configuration
+    var debug_args = try base_args.clone();
+    defer debug_args.deinit();
 
-    const qemu_debug_step = b.step("debug", "Run in qemu with gdb");
-    qemu_debug_step.dependOn(&qemu_debug_command.step);
+    try debug_args.appendSlice(&.{ "-S", "-s" });
+
+    const debug_cmd = b.addSystemCommand(debug_args.items);
+    debug_cmd.step.dependOn(install_image_step);
+    debug_cmd.step.dependOn(b.getInstallStep());
+
+    const debug_step = b.step("debug", "Debug in QEMU with GDB");
+    debug_step.dependOn(&debug_cmd.step);
 }
