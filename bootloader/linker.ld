@@ -19,11 +19,13 @@ SECTIONS
 
     .data : {
         *(.data)
+        *(.data.*)
     }
 
     .bss (NOLOAD) : {
         _bss_start = .;
         *(.bss)
+        *(.bss.*)
         _bss_end = .;
     }
 
