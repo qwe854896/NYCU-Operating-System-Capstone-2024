@@ -20,13 +20,20 @@ SECTIONS
     .eh_frame_hdr : { *(.eh_frame_hdr) }
     .eh_frame : { *(.eh_frame) }
 
+    .got : {
+        *(.got)
+        *(.got.*)
+    }
+
     .data : {
         *(.data)
+        *(.data.*)
     }
 
     .bss (NOLOAD) : {
         _bss_start = .;
         *(.bss)
+        *(.bss.*)
         *(COMMON)
         _bss_end = .;
     }
