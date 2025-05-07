@@ -4,6 +4,7 @@
 
     pwndbg = {
       url = "github:pwndbg/pwndbg/dev";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     zig-overlay = {
@@ -13,6 +14,7 @@
     zls = {
       url = "github:zigtools/zls";
       inputs = {
+        nixpkgs.follows = "nixpkgs";
         zig-overlay.follows = "zig-overlay";
       };
     };
