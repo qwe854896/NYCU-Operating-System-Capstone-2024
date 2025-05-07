@@ -61,12 +61,14 @@
         {
           default = pkgs.mkShell {
             packages = with pkgs; [
+              just
               qemu
               python312
               python312Packages.pyserial
               pwndbg.packages.${system}.default
               zig-overlay.packages.${system}.master
               nixvimExtended.config.build.package
+              minicom
             ];
           };
         }
