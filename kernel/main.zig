@@ -33,12 +33,8 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, _: ?
         }
     }
 
-    const self: *Task = @ptrFromInt(context.getCurrent());
-
-    drivers.watchdog.reset(100);
     while (true) {
-        self.ended = true;
-        sched.schedule();
+        asm volatile ("nop");
     }
 }
 
