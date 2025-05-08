@@ -1,4 +1,5 @@
-const uart = @import("uart.zig");
+const drivers = @import("drivers");
+const uart = drivers.uart;
 
 export const kernel_load_address: usize = 0x80000;
 const start_byte: u8 = 0xAC;

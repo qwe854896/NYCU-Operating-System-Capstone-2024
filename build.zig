@@ -10,6 +10,8 @@ pub fn build(b: *Build) !void {
     const target = setupAArch64Target(b);
     const optimize = b.standardOptimizeOption(.{});
 
+    const drivers = b.createModule(.{ .root_source_file = b.path("drivers/main.zig") });
+
     const kernel = addStaticExecutable(b, .{
         .name = "kernel8.elf",
         .root_source = "kernel/main.zig",
@@ -25,6 +27,7 @@ pub fn build(b: *Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    bootloader.root_module.addImport("drivers", drivers);
 
     b.installArtifact(kernel);
     if (bootloader_mode) b.installArtifact(bootloader);
