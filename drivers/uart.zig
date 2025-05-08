@@ -1,3 +1,4 @@
+const std = @import("std");
 const mmio = @import("mmio.zig");
 const gpio = @import("gpio.zig");
 const Register = mmio.Register;
@@ -124,18 +125,89 @@ pub fn init() void {
     aux_mu_cntl.modify(.{ .tx = .enabled, .rx = .enabled });
 }
 
-// Send a byte over UART
-fn send(byte: u8) void {
+pub fn send(byte: u8) void {
     while (!aux_mu_lsr.read().tx_ready) {
         asm volatile ("nop");
     }
     aux_mu_io.write(.{ .data = byte });
 }
 
-// Receive a byte over UART
 pub fn recv() u8 {
     while (!aux_mu_lsr.read().rx_ready) {
         asm volatile ("nop");
     }
     return aux_mu_io.read().data;
+}
+
+/// Reference: https://zig.guide/standard-library/readers-and-writers/
+const MiniUARTWriter = struct {
+    const Self = @This();
+    const Writer = std.io.Writer(
+        Self,
+        error{},
+        writeFn,
+    );
+    fn writeFn(self: Self, data: []const u8) error{}!usize {
+        _ = self;
+        for (data) |byte| {
+            switch (byte) {
+                '\n' => {
+                    send('\r');
+                    send('\n');
+                },
+                else => send(byte),
+            }
+        }
+        return data.len;
+    }
+    fn init() MiniUARTWriter {
+        return .{};
+    }
+    fn writer(self: Self) Writer {
+        return .{ .context = self };
+    }
+};
+
+const MiniUARTReader = struct {
+    const Self = @This();
+    const Reader = std.io.Reader(
+        Self,
+        error{},
+        readFn,
+    );
+    fn readFn(self: Self, data: []u8) error{}!usize {
+        _ = self;
+        var i: usize = 0;
+        while (i < data.len) {
+            const c = recv();
+            if (c == '\r') {
+                _ = mini_uart_writer.write("\n") catch {};
+                break;
+            }
+            send(c);
+            data[i] = c;
+            i += 1;
+        }
+        return i;
+    }
+    fn init() MiniUARTReader {
+        return .{};
+    }
+    fn reader(self: Self) Reader {
+        return .{ .context = self };
+    }
+};
+
+pub const mini_uart_writer = MiniUARTWriter.init().writer();
+pub const mini_uart_reader = MiniUARTReader.init().reader();
+
+pub fn miniUARTLogFn(
+    comptime level: std.log.Level,
+    comptime scope: @Type(.enum_literal),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    const level_txt = comptime level.asText();
+    const prefix2 = if (scope == .default) ": " else "(" ++ @tagName(scope) ++ "): ";
+    nosuspend mini_uart_writer.print(level_txt ++ prefix2 ++ format ++ "\n", args) catch return;
 }

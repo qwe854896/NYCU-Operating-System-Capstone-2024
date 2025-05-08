@@ -1,6 +1,6 @@
 const std = @import("std");
-const uart = @import("peripherals/uart.zig");
 const drivers = @import("drivers");
+const uart = drivers.uart;
 const initrd = @import("fs/initrd.zig");
 const syscall = @import("syscall.zig");
 

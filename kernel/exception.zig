@@ -1,11 +1,12 @@
 const std = @import("std");
+const drivers = @import("drivers");
 const log = std.log.scoped(.exception);
 const processor = @import("asm/processor.zig");
 const context = @import("asm/context.zig");
 const syscall = @import("syscall.zig");
 const sched = @import("sched.zig");
-const uart = @import("peripherals/uart.zig");
-const mailbox = @import("peripherals/mailbox.zig");
+const uart = drivers.uart;
+const mailbox = drivers.mailbox;
 
 const TrapFrame = processor.TrapFrame;
 const Task = sched.Task;
@@ -60,11 +61,18 @@ fn sysGetpidEntry(trap_frame: *TrapFrame) void {
     trap_frame.x0 = self.id;
 }
 
+fn yieldRecv() u8 {
+    while (!uart.aux_mu_lsr.read().rx_ready) {
+        sched.schedule();
+    }
+    return uart.aux_mu_io.read().data;
+}
+
 fn sysUartReadEntry(trap_frame: *TrapFrame) void {
     var buf: []u8 = @as([*]u8, @ptrFromInt(trap_frame.x0))[0..trap_frame.x1];
     var i: usize = 0;
     while (i < trap_frame.x1) : (i += 1) {
-        buf[i] = uart.yieldRecv();
+        buf[i] = yieldRecv();
     }
     trap_frame.x0 = i;
 }
