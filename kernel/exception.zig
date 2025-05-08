@@ -4,8 +4,8 @@ const processor = @import("asm/processor.zig");
 const context = @import("asm/context.zig");
 const syscall = @import("syscall.zig");
 const sched = @import("sched.zig");
-const uart = @import("uart.zig");
-const mailbox = @import("mailbox.zig");
+const uart = @import("peripherals/uart.zig");
+const mailbox = @import("peripherals/mailbox.zig");
 
 const TrapFrame = processor.TrapFrame;
 const Task = sched.Task;
@@ -64,7 +64,7 @@ fn sysUartReadEntry(trap_frame: *TrapFrame) void {
     var buf: []u8 = @as([*]u8, @ptrFromInt(trap_frame.x0))[0..trap_frame.x1];
     var i: usize = 0;
     while (i < trap_frame.x1) : (i += 1) {
-        buf[i] = uart.sysRecv();
+        buf[i] = uart.yieldRecv();
     }
     trap_frame.x0 = i;
 }
@@ -77,7 +77,7 @@ fn sysUartwriteEntry(trap_frame: *TrapFrame) void {
     const buf: []const u8 = @as([*]const u8, @ptrFromInt(trap_frame.x0))[0..trap_frame.x1];
     var i: usize = 0;
     while (i < trap_frame.x1) : (i += 1) {
-        uart.sysSend(buf[i]);
+        uart.send(buf[i]);
     }
     trap_frame.x0 = i;
 }
@@ -96,7 +96,7 @@ fn sysExecEntry(trap_frame: *TrapFrame) void {
 }
 
 fn sysMboxCallEntry(trap_frame: *TrapFrame) void {
-    const retval = mailbox.sysMboxCall(@intCast(trap_frame.x0), trap_frame.x1);
+    const retval = mailbox.mboxCall(@intCast(trap_frame.x0), trap_frame.x1);
     trap_frame.x0 = @intCast(@as(u1, @bitCast(retval)));
 }
 

@@ -1,4 +1,3 @@
-const sched = @import("sched.zig");
 const drivers = @import("drivers");
 const mailbox = drivers.mailbox;
 
@@ -6,28 +5,9 @@ const MailboxError = error{
     RequestFailed,
 };
 
-pub fn sysMboxCall(ch: u8, mbox: usize) bool {
-    const addr = @as(u32, @intCast(mbox)) & ~@as(u32, 0xF);
-    const message = addr | ch;
-
-    while (mailbox.status.read().full) {
-        sched.schedule();
-    }
-
-    mailbox.write(message);
-
-    while (mailbox.status.read().empty) {
-        sched.schedule();
-    }
-
-    const resp = mailbox.read();
-
-    return resp == message;
-}
-
-fn mbox_call(ch: u8, mbox: []u32) bool {
+pub fn mboxCall(ch: u8, mbox: usize) bool {
     // Combine the message address (upper 28 bits) with channel number (lower 4 bits)
-    const addr = @as(u32, @intCast(@intFromPtr(mbox.ptr))) & ~@as(u32, 0xF);
+    const addr = @as(u32, @intCast(mbox)) & ~@as(u32, 0xF);
     const message = addr | ch;
 
     // Check if Mailbox 0 status register’s full flag is set.
@@ -61,7 +41,7 @@ pub fn getBoardRevision() MailboxError!u32 {
     mbox[5] = 0; // value buffer
     mbox[6] = mailbox.end_tag;
 
-    if (!mbox_call(8, mbox[0..])) {
+    if (!mboxCall(8, @intFromPtr(&mbox))) {
         return MailboxError.RequestFailed;
     }
 
@@ -80,7 +60,7 @@ pub fn getArmMemory() MailboxError!struct { u32, u32 } {
     mbox[6] = 0; // value buffer
     mbox[7] = mailbox.end_tag;
 
-    if (!mbox_call(8, mbox[0..])) {
+    if (!mboxCall(8, @intFromPtr(&mbox))) {
         return MailboxError.RequestFailed;
     }
 

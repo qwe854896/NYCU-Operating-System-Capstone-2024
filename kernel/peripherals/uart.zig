@@ -1,33 +1,26 @@
 /// Reference: https://zig.guide/standard-library/readers-and-writers/
 const std = @import("std");
-const sched = @import("sched.zig");
+const sched = @import("../sched.zig");
 const drivers = @import("drivers");
 const uart = drivers.uart;
 
-pub fn sysSend(byte: u8) void {
+pub fn send(byte: u8) void {
     while (!uart.aux_mu_lsr.read().tx_ready) {
-        sched.schedule();
+        asm volatile ("nop");
     }
     uart.aux_mu_io.write(.{ .data = byte });
 }
 
-pub fn sysRecv() u8 {
+pub fn recv() u8 {
     while (!uart.aux_mu_lsr.read().rx_ready) {
-        sched.schedule();
+        asm volatile ("nop");
     }
     return uart.aux_mu_io.read().data;
 }
 
-fn send(byte: u8) void {
-    while (!uart.aux_mu_lsr.read().tx_ready) {
-        asm volatile ("nop");
-    }
-    uart.aux_mu_io.write(.{ .data = byte });
-}
-
-fn recv() u8 {
+pub fn yieldRecv() u8 {
     while (!uart.aux_mu_lsr.read().rx_ready) {
-        asm volatile ("nop");
+        sched.schedule();
     }
     return uart.aux_mu_io.read().data;
 }
