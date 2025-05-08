@@ -19,6 +19,7 @@ pub fn build(b: *Build) !void {
         .target = target,
         .optimize = optimize,
     });
+    kernel.root_module.addImport("drivers", drivers);
 
     const bootloader = addStaticExecutable(b, .{
         .name = "bootloader.elf",

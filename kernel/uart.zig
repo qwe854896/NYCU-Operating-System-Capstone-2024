@@ -1,59 +1,35 @@
 /// Reference: https://zig.guide/standard-library/readers-and-writers/
 const std = @import("std");
-const mmio = @import("mmio.zig");
 const sched = @import("sched.zig");
-
-const Register = mmio.Register;
-
-const base_address = mmio.base_address + 0x215000;
-
-const aux_enables = Register.init(base_address + 0x04);
-const aux_mu_io_reg = Register.init(base_address + 0x40);
-const aux_mu_ier_reg = Register.init(base_address + 0x44);
-const aux_mu_iir_reg = Register.init(base_address + 0x48);
-const aux_mu_lcr_reg = Register.init(base_address + 0x4C);
-const aux_mu_mcr_reg = Register.init(base_address + 0x50);
-const aux_mu_lsr_reg = Register.init(base_address + 0x54);
-const aux_mu_cntl_reg = Register.init(base_address + 0x60);
-const aux_mu_baud_reg = Register.init(base_address + 0x68);
-
-pub fn init() void {
-    aux_enables.writeRaw(1); // Enable Mini UART
-    aux_mu_cntl_reg.writeRaw(0); // Disable TX and RX during configuration
-    aux_mu_ier_reg.writeRaw(0); // Disable interrupts
-    aux_mu_lcr_reg.writeRaw(3); // Set data size to 8-bit
-    aux_mu_mcr_reg.writeRaw(0); // Disable flow control
-    aux_mu_baud_reg.writeRaw(270); // Set baud rate to 115200 (270 divisor)
-    aux_mu_iir_reg.writeRaw(6); // Clear FIFOs and set interrupt mode
-    aux_mu_cntl_reg.writeRaw(3); // Enable transmitter and receiver
-}
+const drivers = @import("drivers");
+const uart = drivers.uart;
 
 pub fn sysSend(byte: u8) void {
-    while ((aux_mu_lsr_reg.readRaw() & 0x20) == 0) {
+    while (!uart.aux_mu_lsr.read().tx_ready) {
         sched.schedule();
     }
-    aux_mu_io_reg.writeRaw(byte);
+    uart.aux_mu_io.write(.{ .data = byte });
 }
 
 pub fn sysRecv() u8 {
-    while ((aux_mu_lsr_reg.readRaw() & 0x01) == 0) {
+    while (!uart.aux_mu_lsr.read().rx_ready) {
         sched.schedule();
     }
-    return @intCast(aux_mu_io_reg.readRaw() & 0xFF);
+    return uart.aux_mu_io.read().data;
 }
 
 fn send(byte: u8) void {
-    while ((aux_mu_lsr_reg.readRaw() & 0x20) == 0) {
-        asm volatile ("nop"); // Wait until the transmitter is empty
+    while (!uart.aux_mu_lsr.read().tx_ready) {
+        asm volatile ("nop");
     }
-    aux_mu_io_reg.writeRaw(byte);
+    uart.aux_mu_io.write(.{ .data = byte });
 }
 
 fn recv() u8 {
-    while ((aux_mu_lsr_reg.readRaw() & 0x01) == 0) {
-        asm volatile ("nop"); // Wait until data is ready
+    while (!uart.aux_mu_lsr.read().rx_ready) {
+        asm volatile ("nop");
     }
-    return @intCast(aux_mu_io_reg.readRaw() & 0xFF);
+    return uart.aux_mu_io.read().data;
 }
 
 const MiniUARTWriter = struct {

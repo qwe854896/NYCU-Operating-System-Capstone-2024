@@ -1,6 +1,5 @@
 const std = @import("std");
-const log = std.log.scoped(.interrupt);
-const mmio = @import("mmio.zig");
+const log = std.log.scoped(.exception);
 const processor = @import("asm/processor.zig");
 const context = @import("asm/context.zig");
 const syscall = @import("syscall.zig");
@@ -8,19 +7,8 @@ const sched = @import("sched.zig");
 const uart = @import("uart.zig");
 const mailbox = @import("mailbox.zig");
 
-const Register = mmio.Register;
 const TrapFrame = processor.TrapFrame;
 const Task = sched.Task;
-
-const base_address = mmio.base_address + 0xB000;
-
-const irq_enable_1 = Register.init(base_address + 0x210);
-
-pub fn init() void {
-    var reg = irq_enable_1.readRaw();
-    reg |= (0b1 << 29); // Aux int
-    irq_enable_1.writeRaw(reg);
-}
 
 export fn exceptionEntry() void {
     var spsr_el1: usize = undefined;

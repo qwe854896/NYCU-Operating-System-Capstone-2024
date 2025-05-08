@@ -1,11 +1,9 @@
 const std = @import("std");
-const gpio = @import("gpio.zig");
+const drivers = @import("drivers");
 const uart = @import("uart.zig");
 const mailbox = @import("mailbox.zig");
-const reboot = @import("reboot.zig");
 const cpio = @import("cpio.zig");
 const dtb = @import("dtb/main.zig");
-const interrupt = @import("interrupt.zig");
 const page_allocator = @import("heap/page_allocator.zig");
 const dynamic_allocator = @import("heap/dynamic_allocator.zig");
 const sched = @import("sched.zig");
@@ -114,7 +112,7 @@ fn simpleShell(allocator: std.mem.Allocator) void {
                 _ = mini_uart_writer.write("\n") catch {};
             },
             Command.Reboot => {
-                reboot.reset(100);
+                drivers.watchdog.reset(100);
             },
             Command.ListFiles => {
                 const fs = cpio.listFiles(allocator);
@@ -186,7 +184,7 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, _: ?
 
     const self: *Task = @ptrFromInt(context.getCurrent());
 
-    // reboot.reset(100);
+    drivers.watchdog.reset(100);
     while (true) {
         self.ended = true;
         sched.schedule();
@@ -266,9 +264,7 @@ fn runSyscallImg() void {
 
 // Main function for the kernel
 export fn main(dtb_address: usize) void {
-    gpio.init();
-    uart.init();
-    interrupt.init();
+    drivers.init();
 
     const board_revision = mailbox.getBoardRevision() catch {
         @panic("Cannot obtain board revision from mailbox.");

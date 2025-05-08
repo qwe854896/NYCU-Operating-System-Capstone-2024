@@ -4,7 +4,7 @@ const processor = @import("asm/processor.zig");
 const context = @import("asm/context.zig");
 const syscall = @import("syscall.zig");
 const cpio = @import("cpio.zig");
-const interrupt = @import("interrupt.zig");
+const exception = @import("exception.zig");
 
 const ThreadContext = processor.ThreadContext;
 const TrapFrame = processor.TrapFrame;
@@ -138,7 +138,7 @@ pub fn execThread(trap_frame: *TrapFrame, name: []const u8) void {
         const new_program = self.allocator.alignedAlloc(u8, 16, program.len) catch {
             @panic("Out of Memory! No buffer for new program.");
         };
-        std.log.info("New program address: 0x{X}", .{@intFromPtr(new_program.ptr)});
+        log.info("New program address: 0x{X}", .{@intFromPtr(new_program.ptr)});
         @memcpy(new_program, program);
 
         self.program = @intFromPtr(new_program.ptr);
@@ -163,7 +163,7 @@ pub fn schedule() void {
     const next_task = &run_queue.first.?.data;
     run_queue.append(run_queue.popFirst().?);
     context.switchTo(context.getCurrent(), @intFromPtr(next_task));
-    interrupt.isSigkillPending();
+    exception.isSigkillPending();
 }
 
 pub fn idle(allocator: *const std.mem.Allocator) void {

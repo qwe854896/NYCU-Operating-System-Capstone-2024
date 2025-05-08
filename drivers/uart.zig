@@ -99,12 +99,12 @@ const aux_mu_baud_val = packed struct(u32) {
 const base_address = mmio.base_address + 0x215000;
 
 const auxenb = Register(auxenb_val, auxenb_val).init(base_address + 0x04);
-const aux_mu_io = Register(aux_mu_io_val, aux_mu_io_val).init(base_address + 0x40);
+pub const aux_mu_io = Register(aux_mu_io_val, aux_mu_io_val).init(base_address + 0x40);
 const aux_mu_ier = Register(aux_mu_ier_val, aux_mu_ier_val).init(base_address + 0x44);
 const aux_mu_iir = Register(aux_mu_iir_val, aux_mu_iir_val).init(base_address + 0x48);
 const aux_mu_lcr = Register(aux_mu_lcr_val, aux_mu_lcr_val).init(base_address + 0x4C);
 const aux_mu_mcr = Register(aux_mu_mcr_val, aux_mu_mcr_val).init(base_address + 0x50);
-const aux_mu_lsr = Register(aux_mu_lsr_val, aux_mu_lsr_val).init(base_address + 0x54);
+pub const aux_mu_lsr = Register(aux_mu_lsr_val, aux_mu_lsr_val).init(base_address + 0x54);
 const aux_mu_cntl = Register(aux_mu_cntl_val, aux_mu_cntl_val).init(base_address + 0x60);
 const aux_mu_baud = Register(aux_mu_baud_val, aux_mu_baud_val).init(base_address + 0x68);
 
