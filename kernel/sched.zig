@@ -178,7 +178,7 @@ pub fn idle(allocator: *const std.mem.Allocator) void {
     const ctx = @intFromPtr(&thread.data);
     context.switchTo(ctx, ctx);
 
-    while (true) {
+    while (run_queue.len > 1) {
         killZombies();
         schedule();
     }
