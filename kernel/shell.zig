@@ -1,7 +1,7 @@
 const std = @import("std");
 const uart = @import("peripherals/uart.zig");
 const drivers = @import("drivers");
-const cpio = @import("cpio.zig");
+const initrd = @import("fs/initrd.zig");
 const syscall = @import("syscall.zig");
 
 const mini_uart_reader = uart.mini_uart_reader;
@@ -77,18 +77,15 @@ pub fn simpleShell(allocator: std.mem.Allocator) void {
                 drivers.watchdog.reset(100);
             },
             Command.ListFiles => {
-                const fs = cpio.listFiles(allocator);
-                if (fs) |files| {
-                    for (files) |file| {
-                        _ = mini_uart_writer.print("{s}\n", .{file}) catch {};
-                    }
-                    allocator.free(files);
+                const entries = initrd.listFiles();
+                for (entries) |entry| {
+                    _ = mini_uart_writer.print("{s}\n", .{entry.name}) catch {};
                 }
             },
             Command.GetFileContent => {
                 _ = mini_uart_writer.write("Filename: ") catch {};
                 recvlen = mini_uart_reader.read(buffer) catch 0;
-                const c = cpio.getFileContent(buffer[0..recvlen]);
+                const c = initrd.getFileContent(buffer[0..recvlen]);
                 if (c) |content| {
                     _ = mini_uart_writer.print("{s}\n", .{content}) catch {};
                 } else {

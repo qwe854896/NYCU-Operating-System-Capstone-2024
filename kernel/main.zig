@@ -2,7 +2,7 @@ const std = @import("std");
 const drivers = @import("drivers");
 const uart = @import("peripherals/uart.zig");
 const mailbox = @import("peripherals/mailbox.zig");
-const cpio = @import("cpio.zig");
+const initrd = @import("fs/initrd.zig");
 const dtb = @import("dtb/main.zig");
 const page_allocator = @import("heap/page_allocator.zig");
 const dynamic_allocator = @import("heap/dynamic_allocator.zig");
@@ -66,11 +66,11 @@ export fn main(dtb_address: usize) void {
     const startup_allocator = fba.allocator();
 
     const dtb_size = dtb.init(startup_allocator, dtb_address);
-    dtb.fdtTraverse(cpio.initRamfsCallback);
+    dtb.fdtTraverse(initrd.initRamfsCallback);
     dtb.deinit(startup_allocator);
 
-    const initrd_start_ptr = cpio.getInitrdStartPtr();
-    const initrd_end_ptr = cpio.getInitrdEndPtr();
+    const initrd_start_ptr = initrd.getInitrdStartPtr();
+    const initrd_end_ptr = initrd.getInitrdEndPtr();
 
     std.log.info("Board revision: 0x{X}", .{board_revision});
     std.log.info("ARM Memory Base: 0x{X}", .{arm_memory.@"0"});
@@ -92,6 +92,9 @@ export fn main(dtb_address: usize) void {
 
     var da = DynamicAllocator.init(&fa);
     const allocator = da.allocator();
+
+    initrd.init(allocator);
+    defer initrd.deinit();
 
     sched.createThread(&allocator, runSyscallImg);
     sched.idle(&allocator);

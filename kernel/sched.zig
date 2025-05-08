@@ -3,7 +3,7 @@ const log = std.log.scoped(.sched);
 const processor = @import("asm/processor.zig");
 const context = @import("asm/context.zig");
 const syscall = @import("syscall.zig");
-const cpio = @import("cpio.zig");
+const initrd = @import("fs/initrd.zig");
 const exception = @import("exception.zig");
 
 const ThreadContext = processor.ThreadContext;
@@ -127,7 +127,7 @@ pub fn forkThread(parent_trap_frame: *TrapFrame) void {
 
 pub fn execThread(trap_frame: *TrapFrame, name: []const u8) void {
     const self: *volatile Task = @ptrFromInt(context.getCurrent());
-    const p = cpio.getFileContent(name);
+    const p = initrd.getFileContent(name);
 
     if (p) |program| {
         if (self.program_size != 0) {
