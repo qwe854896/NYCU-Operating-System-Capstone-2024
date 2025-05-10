@@ -1,12 +1,12 @@
 const std = @import("std");
 const drivers = @import("drivers");
-const processor = @import("../../arch/aarch64/processor.zig");
+const numbers = @import("numbers.zig");
 const sched = @import("../../sched.zig");
 const context = @import("../../arch/aarch64/context.zig");
+const processor = @import("../../arch/aarch64/processor.zig");
 const registers = @import("../../arch/aarch64/registers.zig");
 const uart = drivers.uart;
 const mailbox = drivers.mailbox;
-const numbers = @import("numbers.zig");
 
 const Task = sched.Task;
 const TrapFrame = processor.TrapFrame;

@@ -1,15 +1,15 @@
 const std = @import("std");
 const drivers = @import("drivers");
+const exception = @import("exception.zig");
+const sched = @import("sched.zig");
+const shell = @import("shell.zig");
+const context = @import("arch/aarch64/context.zig");
+const initrd = @import("fs/initrd.zig");
+const heap = @import("lib/heap.zig");
+const dtb = @import("lib/dtb.zig");
+const syscall = @import("process/syscall/user.zig");
 const uart = drivers.uart;
 const mailbox = drivers.mailbox;
-const initrd = @import("fs/initrd.zig");
-const dtb = @import("lib/dtb.zig");
-const sched = @import("sched.zig");
-const syscall = @import("process/syscall/user.zig");
-const context = @import("arch/aarch64/context.zig");
-const shell = @import("shell.zig");
-const exception = @import("exception.zig");
-const heap = @import("lib/heap.zig");
 
 const PageAllocator = heap.PageAllocator(.{ .verbose_log = false });
 const DynamicAllocator = heap.DynamicAllocator(.{ .verbose_log = false });

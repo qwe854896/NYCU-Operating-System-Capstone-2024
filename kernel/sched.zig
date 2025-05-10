@@ -1,10 +1,10 @@
 const std = @import("std");
-const log = std.log.scoped(.sched);
 const processor = @import("arch/aarch64/processor.zig");
 const context = @import("arch/aarch64/context.zig");
-const syscall = @import("process/syscall/user.zig");
 const initrd = @import("fs/initrd.zig");
 const handlers = @import("process/syscall/handlers.zig");
+const syscall = @import("process/syscall/user.zig");
+const log = std.log.scoped(.sched);
 const jumpToUserMode = @import("arch/aarch64/thread.zig").jumpToUserMode;
 
 const ThreadContext = processor.ThreadContext;

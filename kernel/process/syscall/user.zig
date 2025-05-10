@@ -1,5 +1,5 @@
-const syscall = @import("../../arch/aarch64/syscall.zig");
 const numbers = @import("numbers.zig");
+const syscall = @import("../../arch/aarch64/syscall.zig");
 
 // 0: int getpid()
 pub fn getpid() i32 {

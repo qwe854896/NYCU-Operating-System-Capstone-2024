@@ -1,10 +1,10 @@
 const std = @import("std");
-const log = std.log.scoped(.exception);
+const sched = @import("sched.zig");
 const processor = @import("arch/aarch64/processor.zig");
 const context = @import("arch/aarch64/context.zig");
 const registers = @import("arch/aarch64/registers.zig");
-const sched = @import("sched.zig");
 const dispatcher = @import("process/syscall/dispatcher.zig");
+const log = std.log.scoped(.exception);
 
 const TrapFrame = processor.TrapFrame;
 const Task = sched.Task;

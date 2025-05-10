@@ -1,8 +1,8 @@
 const std = @import("std");
 const drivers = @import("drivers");
-const uart = drivers.uart;
 const initrd = @import("fs/initrd.zig");
 const syscall = @import("process/syscall/user.zig");
+const uart = drivers.uart;
 
 const mini_uart_reader = uart.mini_uart_reader;
 const mini_uart_writer = uart.mini_uart_writer;
