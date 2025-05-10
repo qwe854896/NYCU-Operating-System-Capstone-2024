@@ -119,6 +119,7 @@ pub fn forkThread(parent_trap_frame: *TrapFrame) void {
         var child_trap_frame: *TrapFrame = @ptrFromInt(thread.data.kernel_stack + (@intFromPtr(parent_trap_frame) - self.kernel_stack));
         child_trap_frame.x0 = 0;
         child_trap_frame.x29 = thread.data.user_stack + (parent_trap_frame.x29 - self.user_stack);
+        child_trap_frame.sp_el0 = thread.data.user_stack + (parent_trap_frame.sp_el0 - self.user_stack);
 
         thread.data.sigkill_handler = self.sigkill_handler;
 
@@ -128,7 +129,6 @@ pub fn forkThread(parent_trap_frame: *TrapFrame) void {
         // Handle Child Context
         thread.data.thread_context.cpu_context.fp = thread.data.kernel_stack + (self.thread_context.cpu_context.fp - self.kernel_stack);
         thread.data.thread_context.cpu_context.sp = thread.data.kernel_stack + (self.thread_context.cpu_context.sp - self.kernel_stack);
-        thread.data.thread_context.cpu_context.sp_el0 = thread.data.user_stack + (self.thread_context.cpu_context.sp_el0 - self.user_stack);
 
         run_queue.append(thread);
     }

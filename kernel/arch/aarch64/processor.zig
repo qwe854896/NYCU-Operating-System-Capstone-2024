@@ -14,9 +14,6 @@ pub const CPUContext = packed struct {
     fp: usize = 0,
     pc: usize = 0,
     sp: usize = 0,
-    spsr_el1: usize = 0,
-    elr_el1: usize = 0,
-    sp_el0: usize = 0,
 };
 
 pub const ThreadContext = packed struct {
@@ -55,5 +52,7 @@ pub const TrapFrame = packed struct {
     x28: usize,
     x29: usize,
     x30: usize,
-    elr_el1: usize, // only used for sigreturn
+    elr_el1: usize,
+    sp_el0: usize,
+    spsr_el1: usize,
 };

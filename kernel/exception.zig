@@ -9,18 +9,15 @@ const log = std.log.scoped(.exception);
 const TrapFrame = processor.TrapFrame;
 const Task = sched.Task;
 
-export fn exceptionEntry() void {
-    const spsr_el1: usize = registers.getSpsrEl1();
-    const elr_el1: usize = registers.getElrEl1();
-    const esr_el1: usize = registers.getEsrEl1();
-
+export fn exceptionEntry(sp: usize) void {
+    const trap_frame: *TrapFrame = @ptrFromInt(sp);
     const self: *Task = sched.taskFromCurrent();
-    log.info("Exception occurred! tid: {}", .{self.id});
 
+    log.info("Exception occurred! tid: {}", .{self.id});
     log.info("Exception:", .{});
-    log.info("  SPSR_EL1: 0b{b:0>32}", .{spsr_el1});
-    log.info("  ELR_EL1: 0x{X}", .{elr_el1});
-    log.info("  ESR_EL1: 0b{b:0>32}", .{esr_el1});
+    log.info("  SPSR_EL1: 0b{b:0>32}", .{trap_frame.spsr_el1});
+    log.info("  ELR_EL1: 0x{X}", .{trap_frame.elr_el1});
+    log.info("  ESR_EL1: 0b{b:0>32}", .{registers.getEsrEl1()});
 
     while (true) {
         asm volatile ("nop");
@@ -42,12 +39,10 @@ export fn syscallEntry(sp: usize) void {
     var self: *Task = sched.taskFromCurrent();
     self.trap_frame = trap_frame;
 
-    const elr_el1: usize = registers.getElrEl1();
-
     // mrs x0, CurrentEL
-    const inst: *u32 = @ptrFromInt(elr_el1);
+    const inst: *u32 = @ptrFromInt(trap_frame.elr_el1);
     if (inst.* == 0xd5384240) {
-        registers.setElrEl1(elr_el1 + 4);
+        trap_frame.elr_el1 += 4;
         trap_frame.x0 = 0 << 2;
         return;
     }
@@ -132,7 +127,7 @@ comptime {
 
     asm (
         \\ .macro save_all
-        \\      sub sp, sp, 32 * 8
+        \\      sub sp, sp, 34 * 8
         \\      stp x0, x1, [sp ,16 * 0]
         \\      stp x2, x3, [sp ,16 * 1]
         \\      stp x4, x5, [sp ,16 * 2]
@@ -148,12 +143,21 @@ comptime {
         \\      stp x24, x25, [sp ,16 * 12]
         \\      stp x26, x27, [sp ,16 * 13]
         \\      stp x28, x29, [sp ,16 * 14]
-        \\      str x30, [sp, 16 * 15]
+        \\      mrs x9, elr_el1
+        \\      mrs x10, sp_el0
+        \\      mrs x11, spsr_el1
+        \\      stp x30, x9, [sp ,16 * 15]
+        \\      stp x10, x11, [sp ,16 * 16]
         \\ .endm
     );
 
     asm (
         \\ .macro load_all
+        \\      ldp x30, x9, [sp ,16 * 15]
+        \\      ldp x10, x11, [sp ,16 * 16]
+        \\      msr elr_el1, x9
+        \\      msr sp_el0, x10
+        \\      msr spsr_el1, x11
         \\      ldp x0, x1, [sp ,16 * 0]
         \\      ldp x2, x3, [sp ,16 * 1]
         \\      ldp x4, x5, [sp ,16 * 2]
@@ -169,14 +173,14 @@ comptime {
         \\      ldp x24, x25, [sp ,16 * 12]
         \\      ldp x26, x27, [sp ,16 * 13]
         \\      ldp x28, x29, [sp ,16 * 14]
-        \\      ldr x30, [sp, 16 * 15]
-        \\      add sp, sp, 32 * 8
+        \\      add sp, sp, 34 * 8
         \\ .endm
     );
 
     asm (
         \\ exception_handler:
         \\      save_all
+        \\      mov x0, sp
         \\      bl exceptionEntry
         \\      load_all
         \\      eret

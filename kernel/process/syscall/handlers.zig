@@ -4,7 +4,6 @@ const numbers = @import("numbers.zig");
 const sched = @import("../../sched.zig");
 const context = @import("../../arch/aarch64/context.zig");
 const processor = @import("../../arch/aarch64/processor.zig");
-const registers = @import("../../arch/aarch64/registers.zig");
 const uart = drivers.uart;
 const mailbox = drivers.mailbox;
 
@@ -100,17 +99,12 @@ pub fn isSigkillPending() void {
     var trap_frame = self.trap_frame.?;
 
     // Save trap_frame onto the top of the user-space stack
-    var sp_el0: usize = registers.getSpEl0();
-    trap_frame.elr_el1 = registers.getElrEl1();
-
-    sp_el0 -= @sizeOf(TrapFrame);
+    const sp_el0: usize = trap_frame.sp_el0 - @sizeOf(TrapFrame);
     @as(*TrapFrame, @ptrFromInt(sp_el0)).* = trap_frame.*;
 
-    // move user-space stack, also update
-    registers.setSpEl0(sp_el0);
-    registers.setElrEl1(self.sigkill_handler);
-
     trap_frame.x30 = @intFromPtr(&userSigreturnStub); // lr
+    trap_frame.elr_el1 = self.sigkill_handler;
+    trap_frame.sp_el0 = sp_el0;
 }
 
 pub fn sysSignal(trap_frame: *TrapFrame) void {
@@ -124,10 +118,6 @@ pub fn sysSignal(trap_frame: *TrapFrame) void {
 }
 
 pub fn sysSigreturn(trap_frame: *TrapFrame) void {
-    const sp_el0: usize = registers.getSpEl0();
-
+    const sp_el0: usize = trap_frame.sp_el0;
     trap_frame.* = @as(*TrapFrame, @ptrFromInt(sp_el0)).*;
-
-    registers.setSpEl0(sp_el0 + @sizeOf(TrapFrame));
-    registers.setElrEl1(trap_frame.elr_el1);
 }
