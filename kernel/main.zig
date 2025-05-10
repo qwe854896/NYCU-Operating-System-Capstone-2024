@@ -3,17 +3,16 @@ const drivers = @import("drivers");
 const uart = drivers.uart;
 const mailbox = drivers.mailbox;
 const initrd = @import("fs/initrd.zig");
-const dtb = @import("dtb/main.zig");
-const page_allocator = @import("heap/page_allocator.zig");
-const dynamic_allocator = @import("heap/dynamic_allocator.zig");
+const dtb = @import("lib/dtb.zig");
 const sched = @import("sched.zig");
 const syscall = @import("process/syscall/user.zig");
 const context = @import("arch/aarch64/context.zig");
 const shell = @import("shell.zig");
 const exception = @import("exception.zig");
+const heap = @import("lib/heap.zig");
 
-const PageAllocator = page_allocator.PageAllocator(.{ .verbose_log = false });
-const DynamicAllocator = dynamic_allocator.DynamicAllocator(.{ .verbose_log = false });
+const PageAllocator = heap.PageAllocator(.{ .verbose_log = false });
+const DynamicAllocator = heap.DynamicAllocator(.{ .verbose_log = false });
 const Task = sched.Task;
 
 pub const std_options: std.Options = .{
@@ -57,7 +56,7 @@ export fn main(dtb_address: usize) void {
     const mem: []allowzero u8 = @as([*]allowzero u8, @ptrFromInt(arm_memory.@"0"))[0..arm_memory.@"1"];
 
     const buffer_len = mem.len >> 7;
-    const buffer_addr = std.mem.alignForward(usize, @intFromPtr(&_flash_img_end), 1 << page_allocator.log2_page_size);
+    const buffer_addr = std.mem.alignForward(usize, @intFromPtr(&_flash_img_end), 1 << heap.log2_page_size);
     const buffer: []u8 = @as([*]u8, @ptrFromInt(buffer_addr))[0..buffer_len];
     var fba = std.heap.FixedBufferAllocator.init(buffer);
     const startup_allocator = fba.allocator();

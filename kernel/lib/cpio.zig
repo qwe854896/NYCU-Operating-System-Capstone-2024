@@ -1,6 +1,6 @@
 const std = @import("std");
-const parser = @import("parser.zig");
-const entries = @import("entries.zig");
+const parser = @import("cpio/parser.zig");
+const entries = @import("cpio/entries.zig");
 
 pub const Entry = entries.Entry;
 pub const Error = parser.Error;

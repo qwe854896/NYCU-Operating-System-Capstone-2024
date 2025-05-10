@@ -1,6 +1,6 @@
 const std = @import("std");
-const dtb = @import("../dtb/main.zig");
-const cpio = @import("../cpio/main.zig");
+const dtb = @import("../lib/dtb.zig");
+const cpio = @import("../lib/cpio.zig");
 
 var initrd_start_ptr: [*]const u8 = undefined;
 var initrd_end_ptr: [*]const u8 = undefined;

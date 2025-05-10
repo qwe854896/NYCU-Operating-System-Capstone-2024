@@ -1,5 +1,5 @@
 const std = @import("std");
-const buddy = @import("buddy.zig");
+const buddy = @import("../buddy.zig");
 const log = std.log.scoped(.page);
 const mem = std.mem;
 const log2_int = std.math.log2_int;

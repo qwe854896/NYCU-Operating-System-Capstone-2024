@@ -1,5 +1,5 @@
 const std = @import("std");
-const dtb = @import("dtb.zig");
+const dtb = @import("dtb/dtb.zig");
 
 pub const Node = dtb.Node;
 pub const Prop = dtb.Prop;
