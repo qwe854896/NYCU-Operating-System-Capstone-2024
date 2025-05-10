@@ -1,15 +1,24 @@
 const std = @import("std");
 const log = std.log.scoped(.sched);
-const processor = @import("asm/processor.zig");
-const context = @import("asm/context.zig");
+const processor = @import("arch/aarch64/processor.zig");
+const context = @import("arch/aarch64/context.zig");
 const syscall = @import("process/syscall/user.zig");
 const initrd = @import("fs/initrd.zig");
 const handlers = @import("process/syscall/handlers.zig");
+const jumpToUserMode = @import("arch/aarch64/thread.zig").jumpToUserMode;
 
 const ThreadContext = processor.ThreadContext;
 const TrapFrame = processor.TrapFrame;
 const DoublyLinkedList = std.DoublyLinkedList;
 const RunQueue = DoublyLinkedList(Task);
+
+fn taskFromContext(ctx: *ThreadContext) *Task {
+    return @ptrCast(ctx);
+}
+
+pub fn taskFromCurrent() *Task {
+    return taskFromContext(@ptrFromInt(context.getCurrent()));
+}
 
 pub const Task = packed struct {
     const Self = @This();
@@ -81,7 +90,7 @@ pub fn createThread(allocator: *const std.mem.Allocator, entry: fn () void) void
 }
 
 pub fn forkThread(parent_trap_frame: *TrapFrame) void {
-    const self: *volatile Task = @ptrFromInt(context.getCurrent());
+    const self: *volatile Task = taskFromCurrent();
 
     pid_count += 1;
     var thread = self.allocator.create(RunQueue.Node) catch {
@@ -104,7 +113,7 @@ pub fn forkThread(parent_trap_frame: *TrapFrame) void {
 
     context.switchTo(context.getCurrent(), context.getCurrent());
 
-    const new_self: *volatile Task = @ptrFromInt(context.getCurrent());
+    const new_self: *volatile Task = taskFromCurrent();
     if (@intFromPtr(self) == @intFromPtr(new_self)) {
         // Handle Child TrapFrame
         var child_trap_frame: *TrapFrame = @ptrFromInt(thread.data.kernel_stack + (@intFromPtr(parent_trap_frame) - self.kernel_stack));
@@ -126,7 +135,7 @@ pub fn forkThread(parent_trap_frame: *TrapFrame) void {
 }
 
 pub fn execThread(trap_frame: *TrapFrame, name: []const u8) void {
-    const self: *volatile Task = @ptrFromInt(context.getCurrent());
+    const self: *Task = taskFromCurrent();
     const p = initrd.getFileContent(name);
 
     if (p) |program| {
@@ -185,36 +194,18 @@ pub fn idle(allocator: *const std.mem.Allocator) void {
 }
 
 fn startThread() void {
-    const self: *Task = @ptrFromInt(context.getCurrent());
+    const self: *Task = taskFromCurrent();
 
-    asm volatile (
-        \\ ldr lr, =user_thread_get_back_here
-        \\ mov x1, 0x0
-        \\ msr spsr_el1, x1
-        \\ mov x1, %[arg0]
-        \\ msr elr_el1, x1
-        \\ mov x1, %[arg1]
-        \\ msr sp_el0, x1
-        \\ eret
-        :
-        : [arg0] "r" (self.entry),
-          [arg1] "r" (self.user_stack + self.user_stack_size),
-        : "x1"
-    );
-
-    asm volatile (
-        \\ user_thread_get_back_here:
-    );
+    jumpToUserMode(self.entry, self.user_stack + self.user_stack_size);
 
     syscall.exit(0);
-
     while (true) {
         asm volatile ("nop");
     }
 }
 
 pub fn endThread() noreturn {
-    const self: *Task = @ptrFromInt(context.getCurrent());
+    const self: *Task = taskFromCurrent();
     self.ended = true;
     while (true) {
         schedule();
@@ -233,7 +224,7 @@ pub fn findThreadByPid(pid: u32) ?*RunQueue.Node {
 }
 
 pub fn killThread(pid: u32) void {
-    const self: *Task = @ptrFromInt(context.getCurrent());
+    const self: *Task = taskFromCurrent();
     if (pid == self.id) {
         endThread();
     }

@@ -8,7 +8,7 @@ const page_allocator = @import("heap/page_allocator.zig");
 const dynamic_allocator = @import("heap/dynamic_allocator.zig");
 const sched = @import("sched.zig");
 const syscall = @import("process/syscall/user.zig");
-const context = @import("asm/context.zig");
+const context = @import("arch/aarch64/context.zig");
 const shell = @import("shell.zig");
 const exception = @import("exception.zig");
 

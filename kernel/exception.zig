@@ -1,7 +1,8 @@
 const std = @import("std");
 const log = std.log.scoped(.exception);
-const processor = @import("asm/processor.zig");
-const context = @import("asm/context.zig");
+const processor = @import("arch/aarch64/processor.zig");
+const context = @import("arch/aarch64/context.zig");
+const registers = @import("arch/aarch64/registers.zig");
 const sched = @import("sched.zig");
 const dispatcher = @import("process/syscall/dispatcher.zig");
 
@@ -9,20 +10,11 @@ const TrapFrame = processor.TrapFrame;
 const Task = sched.Task;
 
 export fn exceptionEntry() void {
-    var spsr_el1: usize = undefined;
-    var elr_el1: usize = undefined;
-    var esr_el1: usize = undefined;
+    const spsr_el1: usize = registers.getSpsrEl1();
+    const elr_el1: usize = registers.getElrEl1();
+    const esr_el1: usize = registers.getEsrEl1();
 
-    asm volatile (
-        \\ mrs %[arg0], spsr_el1
-        \\ mrs %[arg1], elr_el1
-        \\ mrs %[arg2], esr_el1
-        : [arg0] "=r" (spsr_el1),
-          [arg1] "=r" (elr_el1),
-          [arg2] "=r" (esr_el1),
-    );
-
-    const self: *Task = @ptrFromInt(context.getCurrent());
+    const self: *Task = sched.taskFromCurrent();
     log.info("Exception occurred! tid: {}", .{self.id});
 
     log.info("Exception:", .{});
@@ -37,38 +29,25 @@ export fn exceptionEntry() void {
 
 export fn coreTimerEntry(sp: usize) void {
     const trap_frame: *TrapFrame = @ptrFromInt(sp);
-    var self: *Task = @ptrFromInt(context.getCurrent());
+    var self: *Task = sched.taskFromCurrent();
     self.trap_frame = trap_frame;
 
     sched.schedule();
 
-    asm volatile (
-        \\ mrs x0, cntfrq_el0
-        \\ lsr x0, x0, #5
-        \\ msr cntp_tval_el0, x0
-        ::: "x0");
+    registers.setCntpTvalEl0(registers.getCntfrqEl0() >> 5);
 }
 
 export fn syscallEntry(sp: usize) void {
     const trap_frame: *TrapFrame = @ptrFromInt(sp);
-    var self: *Task = @ptrFromInt(context.getCurrent());
+    var self: *Task = sched.taskFromCurrent();
     self.trap_frame = trap_frame;
 
-    var elr_el1: usize = undefined;
-
-    asm volatile (
-        \\ mrs %[arg0], elr_el1
-        : [arg0] "=r" (elr_el1),
-    );
+    const elr_el1: usize = registers.getElrEl1();
 
     // mrs x0, CurrentEL
     const inst: *u32 = @ptrFromInt(elr_el1);
     if (inst.* == 0xd5384240) {
-        asm volatile (
-            \\ msr elr_el1, %[arg0]
-            :
-            : [arg0] "r" (elr_el1 + 4),
-        );
+        registers.setElrEl1(elr_el1 + 4);
         trap_frame.x0 = 0 << 2;
         return;
     }

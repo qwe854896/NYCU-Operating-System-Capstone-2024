@@ -1,8 +1,9 @@
 const std = @import("std");
 const drivers = @import("drivers");
-const processor = @import("../../asm/processor.zig");
+const processor = @import("../../arch/aarch64/processor.zig");
 const sched = @import("../../sched.zig");
-const context = @import("../../asm/context.zig");
+const context = @import("../../arch/aarch64/context.zig");
+const registers = @import("../../arch/aarch64/registers.zig");
 const uart = drivers.uart;
 const mailbox = drivers.mailbox;
 const numbers = @import("numbers.zig");
@@ -11,7 +12,7 @@ const Task = sched.Task;
 const TrapFrame = processor.TrapFrame;
 
 pub fn sysGetpid(trap_frame: *TrapFrame) void {
-    const self: *Task = @ptrFromInt(context.getCurrent());
+    const self: *Task = sched.taskFromCurrent();
     trap_frame.x0 = self.id;
 }
 
@@ -89,7 +90,7 @@ fn userSigreturnStub() callconv(.Naked) void {
 }
 
 pub fn isSigkillPending() void {
-    const self: *Task = @ptrFromInt(context.getCurrent());
+    const self: *Task = sched.taskFromCurrent();
 
     if (!self.has_sigkill) {
         return;
@@ -99,33 +100,21 @@ pub fn isSigkillPending() void {
     var trap_frame = self.trap_frame.?;
 
     // Save trap_frame onto the top of the user-space stack
-    var sp_el0: usize = undefined;
-    var elr_el1: usize = undefined;
-    asm volatile (
-        \\ mrs %[arg0], sp_el0
-        \\ mrs %[arg1], elr_el1
-        : [arg0] "=r" (sp_el0),
-          [arg1] "=r" (elr_el1),
-    );
-    trap_frame.elr_el1 = elr_el1;
+    var sp_el0: usize = registers.getSpEl0();
+    trap_frame.elr_el1 = registers.getElrEl1();
 
     sp_el0 -= @sizeOf(TrapFrame);
     @as(*TrapFrame, @ptrFromInt(sp_el0)).* = trap_frame.*;
 
     // move user-space stack, also update
-    asm volatile (
-        \\ msr sp_el0, %[arg0]
-        \\ msr elr_el1, %[arg1]
-        :
-        : [arg0] "r" (sp_el0),
-          [arg1] "r" (self.sigkill_handler),
-    );
+    registers.setSpEl0(sp_el0);
+    registers.setElrEl1(self.sigkill_handler);
 
     trap_frame.x30 = @intFromPtr(&userSigreturnStub); // lr
 }
 
 pub fn sysSignal(trap_frame: *TrapFrame) void {
-    const self: *Task = @ptrFromInt(context.getCurrent());
+    const self: *Task = sched.taskFromCurrent();
     const signal: i32 = @intCast(trap_frame.x0);
     const handler: usize = @intCast(trap_frame.x1);
 
@@ -135,22 +124,10 @@ pub fn sysSignal(trap_frame: *TrapFrame) void {
 }
 
 pub fn sysSigreturn(trap_frame: *TrapFrame) void {
-    var sp_el0: usize = undefined;
-    asm volatile (
-        \\ mrs %[arg0], sp_el0
-        : [arg0] "=r" (sp_el0),
-    );
+    const sp_el0: usize = registers.getSpEl0();
 
     trap_frame.* = @as(*TrapFrame, @ptrFromInt(sp_el0)).*;
-    sp_el0 += @sizeOf(TrapFrame);
 
-    const elr_el1 = trap_frame.elr_el1;
-
-    asm volatile (
-        \\ msr sp_el0, %[arg0]
-        \\ msr elr_el1, %[arg1]
-        :
-        : [arg0] "r" (sp_el0),
-          [arg1] "r" (elr_el1),
-    );
+    registers.setSpEl0(sp_el0 + @sizeOf(TrapFrame));
+    registers.setElrEl1(trap_frame.elr_el1);
 }
