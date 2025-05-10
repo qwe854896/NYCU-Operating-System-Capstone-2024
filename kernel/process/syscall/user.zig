@@ -1,5 +1,4 @@
 // 0: int getpid()
-pub const sys_getpid = 0;
 pub fn getpid() i32 {
     var x0: i32 = undefined;
     asm volatile (
@@ -14,7 +13,6 @@ pub fn getpid() i32 {
 }
 
 // 1: size_t uartread(char buf[], size_t size)
-pub const sys_uartread = 1;
 pub fn uartread(buf: []u8, size: usize) u64 {
     if (size > buf.len) {
         @panic("Buffer size is too small!");
@@ -35,7 +33,6 @@ pub fn uartread(buf: []u8, size: usize) u64 {
 }
 
 // 2: size_t uartwrite(const char buf[], size_t size)
-pub const sys_uartwrite = 2;
 pub fn uartwrite(buf: []const u8, size: usize) u64 {
     if (size > buf.len) {
         @panic("Buffer size is too small!");
@@ -56,7 +53,6 @@ pub fn uartwrite(buf: []const u8, size: usize) u64 {
 }
 
 // 3: int exec(const char *name, char *const argv[])
-pub const sys_exec = 3;
 pub fn exec(name: []const u8, argv: ?[*]const [*:0]const u8) i32 {
     var x0: i32 = undefined;
     asm volatile (
@@ -74,7 +70,6 @@ pub fn exec(name: []const u8, argv: ?[*]const [*:0]const u8) i32 {
 }
 
 // 4: int fork()
-pub const sys_fork = 4;
 pub fn fork() i32 {
     var x0: i32 = undefined;
     asm volatile (
@@ -89,7 +84,6 @@ pub fn fork() i32 {
 }
 
 // 5: void exit(int status)
-pub const sys_exit = 5;
 pub fn exit(status: i32) void {
     asm volatile (
         \\ mov x0, %[x0]
@@ -102,7 +96,6 @@ pub fn exit(status: i32) void {
 }
 
 // 6: int mbox_call(unsigned char ch, unsigned int *mbox)
-pub const sys_mbox_call = 6;
 pub fn mbox_call(ch: u8, mailbox: []u32) i32 {
     var x0: i32 = undefined;
     asm volatile (
@@ -120,7 +113,6 @@ pub fn mbox_call(ch: u8, mailbox: []u32) i32 {
 }
 
 // 7: void kill(int pid)
-pub const sys_kill = 7;
 pub fn kill(pid: i32) void {
     asm volatile (
         \\ mov x0, %[x0]
@@ -133,14 +125,10 @@ pub fn kill(pid: i32) void {
 }
 
 // 8: void signal(int SIGNAL, void (*handler)())
-pub const sys_signal = 8;
-pub const sigkill = 9;
 
 // 9: void sigkill(int pid, int SIGNAL)
-pub const sys_sigkill = 9;
 
 // 20: void sigreturn()
-pub const sys_sigreturn = 20;
 pub extern fn sysSigreturn() void;
 comptime {
     asm (

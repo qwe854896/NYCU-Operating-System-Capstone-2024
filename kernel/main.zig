@@ -7,9 +7,10 @@ const dtb = @import("dtb/main.zig");
 const page_allocator = @import("heap/page_allocator.zig");
 const dynamic_allocator = @import("heap/dynamic_allocator.zig");
 const sched = @import("sched.zig");
-const syscall = @import("syscall.zig");
+const syscall = @import("process/syscall/user.zig");
 const context = @import("asm/context.zig");
 const shell = @import("shell.zig");
+const exception = @import("exception.zig");
 
 const PageAllocator = page_allocator.PageAllocator(.{ .verbose_log = false });
 const DynamicAllocator = dynamic_allocator.DynamicAllocator(.{ .verbose_log = false });
@@ -102,13 +103,16 @@ extern const _flash_img_start: u32;
 extern const _flash_img_end: u32;
 
 comptime {
+    @export(&exception.fromEl2ToEl1, .{ .name = "fromEl2ToEl1" });
+    @export(&exception.coreTimerEnable, .{ .name = "coreTimerEnable" });
+
     // Avoid using x0 as it stores the address of dtb
     asm (
         \\ .section .text.boot
         \\ .global _start
         \\ _start:
-        \\      bl from_el2_to_el1
-        \\      bl core_timer_enable
+        \\      bl fromEl2ToEl1
+        \\      bl coreTimerEnable
         \\      ldr x1, =_stack_top
         \\      mov sp, x1
         \\      ldr x1, =_bss_start

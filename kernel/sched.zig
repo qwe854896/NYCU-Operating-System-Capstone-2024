@@ -2,9 +2,9 @@ const std = @import("std");
 const log = std.log.scoped(.sched);
 const processor = @import("asm/processor.zig");
 const context = @import("asm/context.zig");
-const syscall = @import("syscall.zig");
+const syscall = @import("process/syscall/user.zig");
 const initrd = @import("fs/initrd.zig");
-const exception = @import("exception.zig");
+const handlers = @import("process/syscall/handlers.zig");
 
 const ThreadContext = processor.ThreadContext;
 const TrapFrame = processor.TrapFrame;
@@ -163,7 +163,7 @@ pub fn schedule() void {
     const next_task = &run_queue.first.?.data;
     run_queue.append(run_queue.popFirst().?);
     context.switchTo(context.getCurrent(), @intFromPtr(next_task));
-    exception.isSigkillPending();
+    handlers.isSigkillPending();
 }
 
 pub fn idle(allocator: *const std.mem.Allocator) void {
