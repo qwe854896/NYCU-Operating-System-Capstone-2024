@@ -13,7 +13,6 @@ const mailbox = drivers.mailbox;
 
 const PageAllocator = heap.PageAllocator(.{ .verbose_log = false });
 const DynamicAllocator = heap.DynamicAllocator(.{ .verbose_log = false });
-const Task = sched.Task;
 
 pub const std_options: std.Options = .{
     .log_level = .info,
