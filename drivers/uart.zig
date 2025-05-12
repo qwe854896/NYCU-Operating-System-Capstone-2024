@@ -152,8 +152,8 @@ const MiniUARTWriter = struct {
         for (data) |byte| {
             switch (byte) {
                 '\n' => {
-                    send('\r');
                     send('\n');
+                    send('\r');
                 },
                 else => send(byte),
             }
@@ -180,13 +180,22 @@ const MiniUARTReader = struct {
         var i: usize = 0;
         while (i < data.len) {
             const c = recv();
-            if (c == '\r') {
+            if (c == '\r' or c == '\n') {
                 _ = mini_uart_writer.write("\n") catch {};
                 break;
             }
-            send(c);
-            data[i] = c;
-            i += 1;
+            if (c != '\xf0') {
+                if (c == '\x7f') {
+                    if (i >= 1) {
+                        i -= 1;
+                        _ = mini_uart_writer.write("\x08 \x08") catch {};
+                    }
+                } else {
+                    send(c);
+                    data[i] = c;
+                    i += 1;
+                }
+            }
         }
         return i;
     }
