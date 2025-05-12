@@ -48,7 +48,8 @@ pub fn simpleShell() void {
     var buffer = array[0..];
 
     while (true) {
-        while (sched.run_queue.len > 2) {
+        // Only idle and simpleShell can escape this polling loop
+        while (sched.getRunQueueLen() > 2) {
             sched.schedule();
         }
 
@@ -95,7 +96,7 @@ pub fn simpleShell() void {
                 }
             },
             Command.ExecFileContent => {
-                thread.create(main.allocator, runSyscallImg, false);
+                thread.create(main.getSingletonAllocator(), runSyscallImg, false);
             },
         }
     }

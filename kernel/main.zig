@@ -37,7 +37,10 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, _: ?
 }
 
 // Singleton instance
-pub var allocator: std.mem.Allocator = undefined;
+var allocator: std.mem.Allocator = undefined;
+pub fn getSingletonAllocator() std.mem.Allocator {
+    return allocator;
+}
 
 // Main function for the kernel
 export fn main(dtb_address: usize) void {
