@@ -1,6 +1,6 @@
 // https://elixir.bootlin.com/linux/v6.14.3/source/arch/arm64/include/asm/processor.h#L147
 
-pub const CPUContext = packed struct {
+pub const CpuContext = packed struct {
     x19: usize = 0,
     x20: usize = 0,
     x21: usize = 0,

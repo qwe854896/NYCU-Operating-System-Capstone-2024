@@ -7,17 +7,17 @@ const sched = @import("sched.zig");
 const jumpToUserMode = @import("arch/aarch64/thread.zig").jumpToUserMode;
 const log = std.log.scoped(.thread);
 
-const CPUContext = processor.CPUContext;
+const CpuContext = processor.CpuContext;
 const TrapFrame = processor.TrapFrame;
 
 var pid_count: u32 = 0;
 
-fn threadFromCpu(ctx: *CPUContext) *ThreadContext {
+fn threadFromCpu(ctx: *CpuContext) *ThreadContext {
     return @ptrFromInt(@intFromPtr(ctx) - @offsetOf(ThreadContext, "cpu_context"));
 }
 
 pub fn threadFromCurrent() *ThreadContext {
-    const ctx: *CPUContext = @ptrFromInt(context.getCurrent());
+    const ctx: *CpuContext = @ptrFromInt(context.getCurrent());
     return threadFromCpu(ctx);
 }
 
@@ -41,7 +41,7 @@ pub const ThreadContext = struct {
     has_sigkill: bool = false,
 
     allocator: std.mem.Allocator,
-    cpu_context: processor.CPUContext,
+    cpu_context: processor.CpuContext,
 
     pub fn init(allocator: std.mem.Allocator, id: u32, entry: ?*const fn () void, stack_size: usize) Self {
         const kernel_stack = allocator.alignedAlloc(u8, 16, stack_size) catch {
