@@ -1,7 +1,6 @@
 const std = @import("std");
 const sched = @import("sched.zig");
 const processor = @import("arch/aarch64/processor.zig");
-const context = @import("arch/aarch64/context.zig");
 const registers = @import("arch/aarch64/registers.zig");
 const dispatcher = @import("process/syscall/dispatcher.zig");
 const thread = @import("thread.zig");
@@ -12,7 +11,8 @@ const ThreadContext = thread.ThreadContext;
 
 export fn exceptionEntry(sp: usize) void {
     const trap_frame: *TrapFrame = @ptrFromInt(sp);
-    const self: *ThreadContext = thread.threadFromCurrent();
+    var self: *ThreadContext = thread.threadFromCurrent();
+    self.trap_frame = trap_frame;
 
     log.info("Exception occurred! tid: {}", .{self.id});
     log.info("Exception:", .{});

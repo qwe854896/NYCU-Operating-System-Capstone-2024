@@ -28,6 +28,7 @@ pub const ThreadContext = struct {
 
     id: u32,
     ended: bool = false,
+    is_kernel_thread: bool = false,
 
     entry: usize,
     trap_frame: ?*processor.TrapFrame = null,
@@ -53,6 +54,7 @@ pub const ThreadContext = struct {
         var self = Self{
             .id = id,
             .entry = @intFromPtr(entry),
+            .is_kernel_thread = is_kernel_thread,
             .kernel_stack = @intFromPtr(kernel_stack.ptr),
             .kernel_stack_size = kernel_stack.len,
             .allocator = allocator,
@@ -67,7 +69,6 @@ pub const ThreadContext = struct {
             };
             self.user_stack = @intFromPtr(user_stack.ptr);
             self.user_stack_size = user_stack.len;
-
             self.cpu_context.pc = @intFromPtr(&startUser);
         } else {
             self.cpu_context.pc = @intFromPtr(&startKernel);
@@ -79,8 +80,12 @@ pub const ThreadContext = struct {
     pub fn deinit(self: *Self) void {
         const kernel_stack: []u8 = @as([*]u8, @ptrFromInt(self.kernel_stack))[0..self.kernel_stack_size];
         self.allocator.free(kernel_stack);
-        const user_stack: []u8 = @as([*]u8, @ptrFromInt(self.user_stack))[0..self.user_stack_size];
-        self.allocator.free(user_stack);
+
+        if (!self.is_kernel_thread) {
+            const user_stack: []u8 = @as([*]u8, @ptrFromInt(self.user_stack))[0..self.user_stack_size];
+            self.allocator.free(user_stack);
+        }
+
         if (self.program_size != 0) {
             // const program: []u8 = @as([*]u8, @ptrFromInt(self.program))[0..self.program_size];
             // self.allocator.free(program);
@@ -95,9 +100,7 @@ pub fn create(allocator: std.mem.Allocator, entry: fn () void, is_kernel_thread:
 
 fn startUser() void {
     const self: *ThreadContext = threadFromCurrent();
-
     jumpToUserMode(self.entry, self.user_stack + self.user_stack_size);
-
     syscall.exit(0);
     while (true) {
         asm volatile ("nop");
@@ -106,9 +109,7 @@ fn startUser() void {
 
 fn startKernel() void {
     const self: *ThreadContext = threadFromCurrent();
-
     jumpToKernelMode(self.entry);
-
     end();
 }
 
@@ -201,6 +202,5 @@ pub fn kill(pid: u32) void {
     if (pid == self.id) {
         end();
     }
-
     sched.removeThread(pid);
 }
