@@ -4,14 +4,15 @@ const numbers = @import("numbers.zig");
 const sched = @import("../../sched.zig");
 const context = @import("../../arch/aarch64/context.zig");
 const processor = @import("../../arch/aarch64/processor.zig");
+const thread = @import("../../thread.zig");
 const uart = drivers.uart;
 const mailbox = drivers.mailbox;
 
-const Task = sched.Task;
 const TrapFrame = processor.TrapFrame;
+const ThreadContext = thread.ThreadContext;
 
 pub fn sysGetpid(trap_frame: *TrapFrame) void {
-    const self: *Task = sched.taskFromCurrent();
+    const self: *ThreadContext = thread.threadFromCurrent();
     trap_frame.x0 = self.id;
 }
 
@@ -45,20 +46,20 @@ pub fn sysUartwrite(trap_frame: *TrapFrame) void {
 }
 
 pub fn sysFork(trap_frame: *TrapFrame) void {
-    sched.forkThread(trap_frame);
+    thread.fork(trap_frame);
 }
 
 pub fn sysExit(_: *TrapFrame) void {
-    sched.endThread();
+    thread.end();
 }
 
 pub fn sysKill(trap_frame: *TrapFrame) void {
-    sched.killThread(@intCast(trap_frame.x0));
+    thread.kill(@intCast(trap_frame.x0));
 }
 
 pub fn sysExec(trap_frame: *TrapFrame) void {
     const name: [:0]const u8 = std.mem.span(@as([*:0]const u8, @ptrFromInt(trap_frame.x0)));
-    sched.execThread(trap_frame, name);
+    thread.exec(trap_frame, name);
 }
 
 pub fn sysMboxCall(trap_frame: *TrapFrame) void {
@@ -69,13 +70,13 @@ pub fn sysMboxCall(trap_frame: *TrapFrame) void {
 pub fn sysSigkill(trap_frame: *TrapFrame) void {
     const pid: u32 = @intCast(trap_frame.x0);
     const signal: i32 = @intCast(trap_frame.x1);
-    const thread = sched.findThreadByPid(pid);
-    if (thread) |t| {
+    const ctx = sched.findThreadByPid(pid);
+    if (ctx) |t| {
         if (signal == numbers.signals.sigkill) {
-            if (t.data.sigkill_handler == 0) {
-                sched.killThread(@intCast(trap_frame.x0));
+            if (t.sigkill_handler == 0) {
+                thread.kill(@intCast(trap_frame.x0));
             } else {
-                t.data.has_sigkill = true;
+                t.has_sigkill = true;
             }
         }
     }
@@ -89,7 +90,7 @@ fn userSigreturnStub() callconv(.Naked) void {
 }
 
 pub fn isSigkillPending() void {
-    const self: *Task = sched.taskFromCurrent();
+    const self: *ThreadContext = thread.threadFromCurrent();
 
     if (!self.has_sigkill) {
         return;
@@ -108,7 +109,7 @@ pub fn isSigkillPending() void {
 }
 
 pub fn sysSignal(trap_frame: *TrapFrame) void {
-    const self: *Task = sched.taskFromCurrent();
+    const self: *ThreadContext = thread.threadFromCurrent();
     const signal: i32 = @intCast(trap_frame.x0);
     const handler: usize = @intCast(trap_frame.x1);
 

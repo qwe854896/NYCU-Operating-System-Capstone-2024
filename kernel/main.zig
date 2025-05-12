@@ -8,6 +8,7 @@ const initrd = @import("fs/initrd.zig");
 const heap = @import("lib/heap.zig");
 const dtb = @import("lib/dtb.zig");
 const syscall = @import("process/syscall/user.zig");
+const thread = @import("thread.zig");
 const uart = drivers.uart;
 const mailbox = drivers.mailbox;
 
@@ -91,7 +92,7 @@ export fn main(dtb_address: usize) void {
     initrd.init(allocator);
     defer initrd.deinit();
 
-    sched.createThread(&allocator, runSyscallImg);
+    thread.create(allocator, runSyscallImg);
     sched.idle(&allocator);
 
     shell.simpleShell(allocator);

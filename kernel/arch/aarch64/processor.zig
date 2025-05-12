@@ -16,10 +16,6 @@ pub const CPUContext = packed struct {
     sp: usize = 0,
 };
 
-pub const ThreadContext = packed struct {
-    cpu_context: CPUContext,
-};
-
 pub const TrapFrame = packed struct {
     x0: usize,
     x1: usize,

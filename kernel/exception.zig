@@ -4,14 +4,15 @@ const processor = @import("arch/aarch64/processor.zig");
 const context = @import("arch/aarch64/context.zig");
 const registers = @import("arch/aarch64/registers.zig");
 const dispatcher = @import("process/syscall/dispatcher.zig");
+const thread = @import("thread.zig");
 const log = std.log.scoped(.exception);
 
 const TrapFrame = processor.TrapFrame;
-const Task = sched.Task;
+const ThreadContext = thread.ThreadContext;
 
 export fn exceptionEntry(sp: usize) void {
     const trap_frame: *TrapFrame = @ptrFromInt(sp);
-    const self: *Task = sched.taskFromCurrent();
+    const self: *ThreadContext = thread.threadFromCurrent();
 
     log.info("Exception occurred! tid: {}", .{self.id});
     log.info("Exception:", .{});
@@ -26,7 +27,7 @@ export fn exceptionEntry(sp: usize) void {
 
 export fn coreTimerEntry(sp: usize) void {
     const trap_frame: *TrapFrame = @ptrFromInt(sp);
-    var self: *Task = sched.taskFromCurrent();
+    var self: *ThreadContext = thread.threadFromCurrent();
     self.trap_frame = trap_frame;
 
     sched.schedule();
@@ -36,7 +37,7 @@ export fn coreTimerEntry(sp: usize) void {
 
 export fn syscallEntry(sp: usize) void {
     const trap_frame: *TrapFrame = @ptrFromInt(sp);
-    var self: *Task = sched.taskFromCurrent();
+    var self: *ThreadContext = thread.threadFromCurrent();
     self.trap_frame = trap_frame;
 
     // mrs x0, CurrentEL
