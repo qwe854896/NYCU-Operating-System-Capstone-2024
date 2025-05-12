@@ -2,6 +2,9 @@ const std = @import("std");
 const drivers = @import("drivers");
 const initrd = @import("fs/initrd.zig");
 const syscall = @import("process/syscall/user.zig");
+const thread = @import("thread.zig");
+const main = @import("main.zig");
+const sched = @import("sched.zig");
 const uart = drivers.uart;
 
 const mini_uart_reader = uart.mini_uart_reader;
@@ -15,9 +18,12 @@ const Command = enum {
     ListFiles,
     GetFileContent,
     ExecFileContent,
-    DemoPageAlloc,
-    DemoPageFree,
 };
+
+fn runSyscallImg() void {
+    _ = syscall.exec("syscall.img", null);
+    syscall.exit(-1);
+}
 
 fn parseCommand(command: []const u8) Command {
     if (std.mem.eql(u8, command, "hello")) {
@@ -32,22 +38,20 @@ fn parseCommand(command: []const u8) Command {
         return Command.GetFileContent;
     } else if (std.mem.eql(u8, command, "exec")) {
         return Command.ExecFileContent;
-    } else if (std.mem.eql(u8, command, "alloc")) {
-        return Command.DemoPageAlloc;
-    } else if (std.mem.eql(u8, command, "free")) {
-        return Command.DemoPageFree;
     } else {
         return Command.None;
     }
 }
 
-pub fn simpleShell(allocator: std.mem.Allocator) void {
-    var buffer = allocator.alloc(u8, 256) catch {
-        @panic("Out of Memory! No buffer for simple shell.");
-    };
-    defer allocator.free(buffer);
+pub fn simpleShell() void {
+    var array: [256]u8 = undefined;
+    var buffer = array[0..];
 
     while (true) {
+        while (sched.run_queue.len > 2) {
+            sched.schedule();
+        }
+
         _ = mini_uart_writer.write("# ") catch {};
 
         var recvlen = mini_uart_reader.read(buffer) catch 0;
@@ -65,8 +69,6 @@ pub fn simpleShell(allocator: std.mem.Allocator) void {
                 _ = mini_uart_writer.write("  ls - List files in the initramfs\n") catch {};
                 _ = mini_uart_writer.write("  cat - Print the content of a file in the initramfs\n") catch {};
                 _ = mini_uart_writer.write("  exec - Execute a file in the initramfs\n") catch {};
-                _ = mini_uart_writer.write("  alloc - Run a page allocator demo\n") catch {};
-                _ = mini_uart_writer.write("  free - Run a page free demo\n") catch {};
             },
             Command.None => {
                 _ = mini_uart_writer.write("Unknown command: ") catch {};
@@ -93,34 +95,7 @@ pub fn simpleShell(allocator: std.mem.Allocator) void {
                 }
             },
             Command.ExecFileContent => {
-                _ = mini_uart_writer.write("Filename: ") catch {};
-                recvlen = mini_uart_reader.read(buffer) catch 0;
-                const retval = syscall.exec(buffer[0..recvlen], null);
-                if (retval != 0) {
-                    _ = mini_uart_writer.print("Exec failed with error code: {d}\n", .{retval}) catch {};
-                }
-            },
-            Command.DemoPageAlloc => {
-                _ = mini_uart_writer.write("Length of Allocated Memory?: ") catch {};
-                recvlen = mini_uart_reader.read(buffer) catch 0;
-
-                const name_size = std.fmt.parseInt(u32, buffer[0..recvlen], 10) catch 0;
-                const demo_buffer: []u8 = allocator.alloc(u8, name_size) catch {
-                    _ = mini_uart_writer.write("Allocation failed\n") catch {};
-                    continue;
-                };
-
-                _ = mini_uart_writer.print("Buffer Address: 0x{X}\n", .{@intFromPtr(demo_buffer.ptr)}) catch {};
-            },
-            Command.DemoPageFree => {
-                _ = mini_uart_writer.write("Address of Allocated Memory?: ") catch {};
-                recvlen = mini_uart_reader.read(buffer) catch 0;
-
-                const address = std.fmt.parseInt(usize, buffer[2..recvlen], 16) catch 0;
-                const db: []u8 = @as([*]u8, @ptrFromInt(address))[0..1];
-
-                allocator.free(db);
-                _ = mini_uart_writer.print("Freed memory at address: 0x{X}\n", .{address}) catch {};
+                thread.create(main.allocator, runSyscallImg, false);
             },
         }
     }

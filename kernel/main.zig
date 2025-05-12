@@ -3,11 +3,9 @@ const drivers = @import("drivers");
 const exception = @import("exception.zig");
 const sched = @import("sched.zig");
 const shell = @import("shell.zig");
-const context = @import("arch/aarch64/context.zig");
 const initrd = @import("fs/initrd.zig");
 const heap = @import("lib/heap.zig");
 const dtb = @import("lib/dtb.zig");
-const syscall = @import("process/syscall/user.zig");
 const thread = @import("thread.zig");
 const uart = drivers.uart;
 const mailbox = drivers.mailbox;
@@ -38,10 +36,8 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, _: ?
     }
 }
 
-fn runSyscallImg() void {
-    _ = syscall.exec("syscall.img", null);
-    syscall.exit(-1);
-}
+// Singleton instance
+pub var allocator: std.mem.Allocator = undefined;
 
 // Main function for the kernel
 export fn main(dtb_address: usize) void {
@@ -87,15 +83,13 @@ export fn main(dtb_address: usize) void {
     fa.memory_reserve(dtb_address, dtb_address + dtb_size);
 
     var da = DynamicAllocator.init(&fa);
-    const allocator = da.allocator();
+    allocator = da.allocator();
 
     initrd.init(allocator);
     defer initrd.deinit();
 
-    thread.create(allocator, runSyscallImg);
+    thread.create(allocator, shell.simpleShell, true);
     sched.idle(&allocator);
-
-    shell.simpleShell(allocator);
 }
 
 extern const _flash_img_start: u32;

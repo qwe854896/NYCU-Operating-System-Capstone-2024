@@ -4,7 +4,9 @@ const context = @import("arch/aarch64/context.zig");
 const syscall = @import("process/syscall/user.zig");
 const initrd = @import("fs/initrd.zig");
 const sched = @import("sched.zig");
-const jumpToUserMode = @import("arch/aarch64/thread.zig").jumpToUserMode;
+const thread_asm = @import("arch/aarch64/thread.zig");
+const jumpToUserMode = thread_asm.jumpToUserMode;
+const jumpToKernelMode = thread_asm.jumpToKernelMode;
 const log = std.log.scoped(.thread);
 
 const CpuContext = processor.CpuContext;
@@ -32,8 +34,8 @@ pub const ThreadContext = struct {
 
     kernel_stack: usize,
     kernel_stack_size: usize,
-    user_stack: usize,
-    user_stack_size: usize,
+    user_stack: usize = 0,
+    user_stack_size: usize = 0,
     program: usize = 0,
     program_size: usize = 0,
 
@@ -43,27 +45,33 @@ pub const ThreadContext = struct {
     allocator: std.mem.Allocator,
     cpu_context: processor.CpuContext,
 
-    pub fn init(allocator: std.mem.Allocator, id: u32, entry: ?*const fn () void, stack_size: usize) Self {
+    pub fn init(allocator: std.mem.Allocator, id: u32, entry: ?*const fn () void, stack_size: usize, is_kernel_thread: bool) Self {
         const kernel_stack = allocator.alignedAlloc(u8, 16, stack_size) catch {
-            @panic("Out of Memory! No buffer for thread stack.");
-        };
-        const user_stack = allocator.alignedAlloc(u8, 16, stack_size) catch {
             @panic("Out of Memory! No buffer for thread stack.");
         };
 
         var self = Self{
-            .cpu_context = .{},
             .id = id,
             .entry = @intFromPtr(entry),
             .kernel_stack = @intFromPtr(kernel_stack.ptr),
             .kernel_stack_size = kernel_stack.len,
-            .user_stack = @intFromPtr(user_stack.ptr),
-            .user_stack_size = user_stack.len,
             .allocator = allocator,
+            .cpu_context = .{},
         };
 
-        self.cpu_context.pc = @intFromPtr(&start);
         self.cpu_context.sp = self.kernel_stack + self.kernel_stack_size;
+
+        if (!is_kernel_thread) {
+            const user_stack = allocator.alignedAlloc(u8, 16, stack_size) catch {
+                @panic("Out of Memory! No buffer for thread stack.");
+            };
+            self.user_stack = @intFromPtr(user_stack.ptr);
+            self.user_stack_size = user_stack.len;
+
+            self.cpu_context.pc = @intFromPtr(&startUser);
+        } else {
+            self.cpu_context.pc = @intFromPtr(&startKernel);
+        }
 
         return self;
     }
@@ -80,12 +88,12 @@ pub const ThreadContext = struct {
     }
 };
 
-pub fn create(allocator: std.mem.Allocator, entry: fn () void) void {
+pub fn create(allocator: std.mem.Allocator, entry: fn () void, is_kernel_thread: bool) void {
     pid_count += 1;
-    sched.appendThread(ThreadContext.init(allocator, pid_count, entry, 0x8000));
+    sched.appendThread(ThreadContext.init(allocator, pid_count, entry, 0x8000, is_kernel_thread));
 }
 
-fn start() void {
+fn startUser() void {
     const self: *ThreadContext = threadFromCurrent();
 
     jumpToUserMode(self.entry, self.user_stack + self.user_stack_size);
@@ -94,6 +102,14 @@ fn start() void {
     while (true) {
         asm volatile ("nop");
     }
+}
+
+fn startKernel() void {
+    const self: *ThreadContext = threadFromCurrent();
+
+    jumpToKernelMode(self.entry);
+
+    end();
 }
 
 pub fn end() noreturn {
@@ -109,7 +125,7 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
 
     pid_count += 1;
 
-    var t = ThreadContext.init(self.allocator, pid_count, null, self.user_stack_size);
+    var t = ThreadContext.init(self.allocator, pid_count, null, self.user_stack_size, false);
 
     const parent_kernel_stack: []u8 = @as([*]u8, @ptrFromInt(self.kernel_stack))[0..self.kernel_stack_size];
     const parent_user_stack: []u8 = @as([*]u8, @ptrFromInt(self.user_stack))[0..self.user_stack_size];
@@ -171,7 +187,7 @@ pub fn exec(trap_frame: *TrapFrame, name: []const u8) void {
             \\ br %[arg1]
             :
             : [arg0] "r" (self.kernel_stack + self.kernel_stack_size),
-              [arg1] "r" (@intFromPtr(&start)),
+              [arg1] "r" (@intFromPtr(&startUser)),
         );
 
         unreachable;

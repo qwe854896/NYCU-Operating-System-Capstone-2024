@@ -15,3 +15,13 @@ pub fn jumpToUserMode(entry: usize, stack: usize) void {
         : "x1"
     );
 }
+
+pub fn jumpToKernelMode(entry: usize) void {
+    asm volatile (
+        \\ mov x1, %[entry]
+        \\ blr x1
+        :
+        : [entry] "r" (entry),
+        : "x1"
+    );
+}

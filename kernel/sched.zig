@@ -26,7 +26,7 @@ pub const Task = struct {
     }
 };
 
-var run_queue = RunQueue{};
+pub var run_queue = RunQueue{};
 
 pub fn appendThread(t: ThreadContext) void {
     var node = t.allocator.create(RunQueue.Node) catch {
