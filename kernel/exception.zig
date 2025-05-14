@@ -57,8 +57,6 @@ pub fn fromEl2ToEl1() callconv(.Naked) void {
         \\      mov x1, #0x00300000 // No trap to all NEON & FP instructions
         \\      msr cpacr_el1, x1   // References: https://developer.arm.com/documentation/ka006062/latest/
         \\      adr x1, exception_vector_table
-        \\      mov x2, #0xffff000000000000
-        \\      add x1, x1, x2
         \\      msr vbar_el1, x1
         \\      mov x1, (1 << 31)
         \\      msr hcr_el2, x1
