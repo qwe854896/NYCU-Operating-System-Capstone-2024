@@ -47,7 +47,7 @@ pub fn PageAllocator(comptime config: Config) type {
             };
 
             const metadata: []u8 = @ptrCast(manager.getMetadata());
-            const metadata_start = @intFromPtr(metadata.ptr);
+            const metadata_start = @intFromPtr(metadata.ptr) - 0xffff000000000000; // workaround for virtual address issue
 
             self.memory_reserve(bytes.len, fix_len);
             self.memory_reserve(metadata_start, metadata_start + metadata.len);
