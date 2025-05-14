@@ -7,6 +7,7 @@ const initrd = @import("fs/initrd.zig");
 const heap = @import("lib/heap.zig");
 const dtb = @import("lib/dtb.zig");
 const thread = @import("thread.zig");
+const mm = @import("mm.zig");
 const uart = drivers.uart;
 const mailbox = drivers.mailbox;
 
@@ -46,13 +47,16 @@ pub fn getSingletonAllocator() std.mem.Allocator {
 export fn main(dtb_address: usize) void {
     drivers.init();
 
+    const kernel_identity_offset = 0xffff000000000000;
+
     const board_revision = mailbox.getBoardRevision() catch {
         @panic("Cannot obtain board revision from mailbox.");
     };
     const arm_memory = mailbox.getArmMemory() catch {
         @panic("Cannot obtain ARM memory information from mailbox.");
     };
-    const mem: []allowzero u8 = @as([*]allowzero u8, @ptrFromInt(arm_memory.@"0"))[0..arm_memory.@"1"];
+    const arm_memory_address: usize = arm_memory.@"0";
+    const mem: []allowzero u8 = @as([*]allowzero u8, @ptrFromInt(arm_memory_address + kernel_identity_offset))[0..arm_memory.@"1"];
 
     const buffer_len = mem.len >> 7;
     const buffer_addr = std.mem.alignForward(usize, @intFromPtr(&_flash_img_end), 1 << heap.log2_page_size);
@@ -74,14 +78,15 @@ export fn main(dtb_address: usize) void {
     std.log.info("Initrd End: 0x{X}", .{initrd_end_ptr});
     std.log.info("DTB Address: 0x{X}", .{dtb_address});
     std.log.info("DTB Size: 0x{X}", .{dtb_size});
+    std.log.info("img: start: 0x{X} end: 0x{X}", .{ @intFromPtr(&_flash_img_start), @intFromPtr(&_flash_img_end) });
 
     fba = std.heap.FixedBufferAllocator.init(buffer);
     var fa = PageAllocator.init(startup_allocator, mem) catch {
         @panic("Cannot init page allocator!");
     };
 
-    fa.memory_reserve(0x0000, 0x1000); // spin tables
-    fa.memory_reserve(@intFromPtr(&_flash_img_start), @intFromPtr(&_flash_img_end));
+    fa.memory_reserve(0x0000, 0x2000); // spin tables
+    fa.memory_reserve(@intFromPtr(&_flash_img_start) - kernel_identity_offset, @intFromPtr(&_flash_img_end) - kernel_identity_offset);
     fa.memory_reserve(initrd_start_ptr, initrd_end_ptr);
     fa.memory_reserve(dtb_address, dtb_address + dtb_size);
 
@@ -101,6 +106,9 @@ extern const _flash_img_end: u32;
 comptime {
     @export(&exception.fromEl2ToEl1, .{ .name = "fromEl2ToEl1" });
     @export(&exception.coreTimerEnable, .{ .name = "coreTimerEnable" });
+    @export(&mm.tcrInit, .{ .name = "tcrInit" });
+    @export(&mm.mairInit, .{ .name = "mairInit" });
+    @export(&mm.enableMMU, .{ .name = "enableMMU" });
 
     // Avoid using x0 as it stores the address of dtb
     asm (
@@ -109,6 +117,12 @@ comptime {
         \\ _start:
         \\      bl fromEl2ToEl1
         \\      bl coreTimerEnable
+        \\      bl tcrInit
+        \\      bl mairInit
+        \\      bl enableMMU
+        \\      ldr x2, =boot_rest
+        \\      br x2
+        \\ boot_rest:
         \\      ldr x1, =_stack_top
         \\      mov sp, x1
         \\      ldr x1, =_bss_start

@@ -38,7 +38,7 @@ const MailboxError = error{
 
 pub fn mboxCall(ch: u8, mbox: usize) bool {
     // Combine the message address (upper 28 bits) with channel number (lower 4 bits)
-    const addr = @as(u32, @intCast(mbox)) & ~@as(u32, 0xF);
+    const addr = @as(u32, @truncate(mbox)) & ~@as(u32, 0xF);
     const message = addr | ch;
 
     // Check if Mailbox 0 status register’s full flag is set.

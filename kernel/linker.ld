@@ -1,6 +1,7 @@
 SECTIONS
 {
-    . = 0x80000;
+    . = 0xffff000000000000;
+    . += 0x80000;
     _flash_img_start = .;
 
     .text.boot : {
