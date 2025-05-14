@@ -81,8 +81,8 @@ const boot_pud_attr = pd_access | (mair_idx_device_ngnrne << 2) | pd_block;
 pub fn enableMMU() callconv(.Naked) void {
     asm volatile (
     // Initialize page table bases
-        \\ mov x1, 0       // PGD at physical address 0x0
-        \\ mov x2, 0x1000  // PUD at physical address 0x1000
+        \\ mov x1, 0x1000       // PGD at physical address 0x0
+        \\ mov x2, 0x2000  // PUD at physical address 0x1000
 
         // Link PGD[0] -> PUD (0x1000 | attributes)
         \\ mov x3, %[pgd_attr]

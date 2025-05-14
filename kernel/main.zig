@@ -85,7 +85,8 @@ export fn main(dtb_address: usize) void {
         @panic("Cannot init page allocator!");
     };
 
-    fa.memory_reserve(0x0000, 0x2000); // spin tables
+    fa.memory_reserve(0x0000, 0x1000); // spin tables
+    fa.memory_reserve(0x1000, 0x3000); // Initial PGD and PUD
     fa.memory_reserve(@intFromPtr(&_flash_img_start) - kernel_identity_offset, @intFromPtr(&_flash_img_end) - kernel_identity_offset);
     fa.memory_reserve(initrd_start_ptr, initrd_end_ptr);
     fa.memory_reserve(dtb_address, dtb_address + dtb_size);
