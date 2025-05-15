@@ -41,7 +41,7 @@ fn walk(
 
             if (entry.valid) {
                 if (!entry.not_block) return Error.BlockEntryExists;
-                current = @ptrFromInt(entry.phys_addr << 12);
+                current = @ptrFromInt(@as(u64, entry.phys_addr << 12) | 0xffff000000000000);
                 break :do;
             }
 
@@ -93,8 +93,8 @@ pub fn mapPages(
     while (current_va < va + size) {
         const entry = try walk(page_table, current_va, true, granularity);
 
-        if (entry.valid)
-            return error.AlreadyMapped;
+        // if (entry.valid)
+        //     return error.AlreadyMapped;
 
         entry.* = .{
             .valid = true,
