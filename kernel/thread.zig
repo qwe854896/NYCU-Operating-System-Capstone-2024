@@ -5,6 +5,7 @@ const syscall = @import("process/syscall/user.zig");
 const initrd = @import("fs/initrd.zig");
 const sched = @import("sched.zig");
 const thread_asm = @import("arch/aarch64/thread.zig");
+const mm = @import("mm.zig");
 const jumpToUserMode = thread_asm.jumpToUserMode;
 const jumpToKernelMode = thread_asm.jumpToKernelMode;
 const log = std.log.scoped(.thread);
@@ -39,6 +40,7 @@ pub const ThreadContext = struct {
     user_stack_size: usize = 0,
     program: usize = 0,
     program_size: usize = 0,
+    pgd: ?*mm.map.PageTable = null,
 
     sigkill_handler: usize = 0,
     has_sigkill: bool = false,
@@ -63,16 +65,18 @@ pub const ThreadContext = struct {
 
         self.cpu_context.sp = self.kernel_stack + self.kernel_stack_size;
 
-        if (!is_kernel_thread) {
-            const user_stack = allocator.alignedAlloc(u8, 16, stack_size) catch {
-                @panic("Out of Memory! No buffer for thread stack.");
-            };
-            self.user_stack = @intFromPtr(user_stack.ptr);
-            self.user_stack_size = user_stack.len;
-            self.cpu_context.pc = @intFromPtr(&startUser);
-        } else {
-            self.cpu_context.pc = @intFromPtr(&startKernel);
-        }
+        const user_stack = allocator.alignedAlloc(u8, 16, stack_size) catch {
+            @panic("Out of Memory! No buffer for thread stack.");
+        };
+        self.user_stack = @intFromPtr(user_stack.ptr);
+        self.user_stack_size = user_stack.len;
+
+        self.pgd = allocator.create(mm.map.PageTable) catch {
+            @panic("Cannot create kernel page table!");
+        };
+        @memset(@as([]u8, @ptrCast(self.pgd.?)), 0);
+
+        self.cpu_context.pc = @intFromPtr(&startKernel);
 
         return self;
     }
@@ -100,7 +104,43 @@ pub fn create(allocator: std.mem.Allocator, entry: fn () void, is_kernel_thread:
 
 fn startUser() void {
     const self: *ThreadContext = threadFromCurrent();
-    jumpToUserMode(self.entry, self.user_stack + self.user_stack_size);
+    const va = 0;
+    const v_stack_start = 0xffffffffb000;
+    const v_stack_end = 0xfffffffff000;
+    mm.map.mapPages(
+        self.pgd.?,
+        va,
+        std.mem.alignForwardLog2(self.program_size, 12),
+        self.program,
+        .{
+            .user = true,
+            .read_only = false,
+            .el0_exec = true,
+            .el1_exec = false,
+            .mair_index = 1,
+        },
+        .PTE,
+    ) catch {
+        @panic("Cannot map user program memory!");
+    };
+    mm.map.mapPages(
+        self.pgd.?,
+        v_stack_start,
+        v_stack_end - v_stack_start,
+        self.user_stack,
+        .{
+            .user = true,
+            .read_only = false,
+            .el0_exec = false,
+            .el1_exec = false,
+            .mair_index = 1,
+        },
+        .PTE,
+    ) catch {
+        @panic("Cannot map user stack memory!");
+    };
+    context.switchTtbr0(@intFromPtr(self.pgd.?));
+    jumpToUserMode(va, v_stack_end);
     syscall.exit(0);
     while (true) {
         asm volatile ("nop");

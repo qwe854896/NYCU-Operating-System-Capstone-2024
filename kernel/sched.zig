@@ -53,6 +53,10 @@ pub fn removeThread(pid: u32) void {
 pub fn schedule() void {
     const next_task = &run_queue.first.?.data;
     run_queue.append(run_queue.popFirst().?);
+    const next_pgd = next_task.thread_context.pgd;
+    if (next_pgd) |np| {
+        context.switchTtbr0(@intFromPtr(np));
+    }
     context.switchTo(context.getCurrent(), @intFromPtr(next_task) + @offsetOf(Task, "thread_context") + @offsetOf(ThreadContext, "cpu_context"));
     handlers.isSigkillPending();
 }
