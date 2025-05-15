@@ -117,6 +117,7 @@ export fn main(dtb_address: usize) void {
             .el1_exec = true,
             .mair_index = 1,
         },
+        .PMD,
     ) catch {
         @panic("Cannot map kernel memory!");
     };
@@ -132,6 +133,7 @@ export fn main(dtb_address: usize) void {
             .el1_exec = false,
             .mair_index = 0,
         },
+        .PMD,
     ) catch {
         @panic("Cannot map kernel memory!");
     };
@@ -147,6 +149,7 @@ export fn main(dtb_address: usize) void {
             .el1_exec = false,
             .mair_index = 0,
         },
+        .PUD,
     ) catch {
         @panic("Cannot map kernel memory!");
     };

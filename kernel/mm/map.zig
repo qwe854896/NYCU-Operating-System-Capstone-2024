@@ -4,6 +4,7 @@ const main = @import("../main.zig");
 
 const PageTableEntry = types.PageTableEntry;
 pub const PageTable = types.PageTable;
+pub const Granularity = enum { PTE, PMD, PUD };
 const getSingletonPageAllocator = main.getSingletonPageAllocator;
 
 const PGD_SHIFT = 39;
@@ -20,19 +21,28 @@ fn getLevelIndex(va: u64, comptime shift: u6) u9 {
     return @truncate((va >> shift) & 0x1FF);
 }
 
-fn walk(page_table: *PageTable, va: u64, alloc: bool) Error!*PageTableEntry {
+fn walk(
+    page_table: *PageTable,
+    va: u64,
+    alloc: bool,
+    comptime granularity: Granularity,
+) Error!*PageTableEntry {
     var current = page_table;
-    inline for (.{ PGD_SHIFT, PUD_SHIFT, PMD_SHIFT }) |shift| {
+
+    // Process upper levels based on granularity
+    inline for (switch (granularity) {
+        .PUD => &.{PGD_SHIFT},
+        .PMD => &.{ PGD_SHIFT, PUD_SHIFT },
+        .PTE => &.{ PGD_SHIFT, PUD_SHIFT, PMD_SHIFT },
+    }) |shift| {
         do: {
             const index = getLevelIndex(va, shift);
             const entry = &current[index];
 
             if (entry.valid) {
-                if (entry.not_block) { // Table descriptor
-                    current = @ptrFromInt(entry.phys_addr << 12);
-                    break :do;
-                }
-                return Error.BlockEntryExists;
+                if (!entry.not_block) return Error.BlockEntryExists;
+                current = @ptrFromInt(entry.phys_addr << 12);
+                break :do;
             }
 
             if (!alloc) return Error.NoEntry;
@@ -50,7 +60,14 @@ fn walk(page_table: *PageTable, va: u64, alloc: bool) Error!*PageTableEntry {
         }
     }
 
-    return &current[getLevelIndex(va, PTE_SHIFT)];
+    // Handle final level
+    return &current[
+        getLevelIndex(va, switch (granularity) {
+            .PUD => PUD_SHIFT,
+            .PMD => PMD_SHIFT,
+            .PTE => PTE_SHIFT,
+        })
+    ];
 }
 
 pub fn mapPages(
@@ -59,16 +76,29 @@ pub fn mapPages(
     size: usize,
     pa: u64,
     flags: struct { user: bool, read_only: bool, el0_exec: bool, el1_exec: bool, mair_index: u3 },
+    comptime granularity: Granularity,
 ) !void {
+    const block_size: usize = switch (granularity) {
+        .PTE => 4096,
+        .PMD => 2 * 1024 * 1024,
+        .PUD => 1 * 1024 * 1024 * 1024,
+    };
+
+    if ((va | pa | size) & (block_size - 1) != 0)
+        return error.Unaligned;
+
     var current_va = va;
     var current_pa = pa;
 
     while (current_va < va + size) {
-        const pte = try walk(page_table, current_va, true);
+        const entry = try walk(page_table, current_va, true, granularity);
 
-        pte.* = .{
+        if (entry.valid)
+            return error.AlreadyMapped;
+
+        entry.* = .{
             .valid = true,
-            .not_block = true, // Page descriptor
+            .not_block = (granularity == .PTE),
             .mair_index = flags.mair_index,
             .user_access = flags.user,
             .read_only = flags.read_only,
@@ -78,7 +108,7 @@ pub fn mapPages(
             .unprivileged_non_executable = !flags.el0_exec,
         };
 
-        current_va += 4096;
-        current_pa += 4096;
+        current_va += block_size;
+        current_pa += block_size;
     }
 }
