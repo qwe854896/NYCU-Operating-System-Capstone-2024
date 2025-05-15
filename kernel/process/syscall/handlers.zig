@@ -5,6 +5,7 @@ const sched = @import("../../sched.zig");
 const context = @import("../../arch/aarch64/context.zig");
 const processor = @import("../../arch/aarch64/processor.zig");
 const thread = @import("../../thread.zig");
+const mm = @import("../../mm.zig");
 const uart = drivers.uart;
 const mailbox = drivers.mailbox;
 
@@ -63,7 +64,13 @@ pub fn sysExec(trap_frame: *TrapFrame) void {
 }
 
 pub fn sysMboxCall(trap_frame: *TrapFrame) void {
-    const retval = mailbox.mboxCall(@intCast(trap_frame.x0), trap_frame.x1);
+    const self: *ThreadContext = thread.threadFromCurrent();
+    const va = trap_frame.x1;
+    const pa = mm.map.virtToPhys(self.pgd.?, va) catch {
+        trap_frame.x0 = 0;
+        return;
+    };
+    const retval = mailbox.mboxCall(@intCast(trap_frame.x0), pa);
     trap_frame.x0 = @intCast(@as(u1, @bitCast(retval)));
 }
 
