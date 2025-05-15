@@ -89,7 +89,7 @@ pub fn sysSigkill(trap_frame: *TrapFrame) void {
     }
 }
 
-fn userSigreturnStub() callconv(.Naked) void {
+pub fn userSigreturnStub() callconv(.Naked) void {
     asm volatile (
         \\ mov x8, #20
         \\ svc 0
@@ -110,7 +110,7 @@ pub fn isSigkillPending() void {
     const sp_el0: usize = trap_frame.sp_el0 - @sizeOf(TrapFrame);
     @as(*TrapFrame, @ptrFromInt(sp_el0)).* = trap_frame.*;
 
-    trap_frame.x30 = @intFromPtr(&userSigreturnStub); // lr
+    trap_frame.x30 = 0xfffffffff000 | (@intFromPtr(&userSigreturnStub) & 0xfff); // lr
     trap_frame.elr_el1 = self.sigkill_handler;
     trap_frame.sp_el0 = sp_el0;
 }

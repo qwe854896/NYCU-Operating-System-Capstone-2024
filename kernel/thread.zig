@@ -6,6 +6,7 @@ const initrd = @import("fs/initrd.zig");
 const sched = @import("sched.zig");
 const thread_asm = @import("arch/aarch64/thread.zig");
 const mm = @import("mm.zig");
+const handlers = @import("process/syscall/handlers.zig");
 const jumpToUserMode = thread_asm.jumpToUserMode;
 const jumpToKernelMode = thread_asm.jumpToKernelMode;
 const log = std.log.scoped(.thread);
@@ -173,8 +174,81 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
     @memcpy(child_kernel_stack, parent_kernel_stack);
     @memcpy(child_user_stack, parent_user_stack);
 
+    t.sigkill_handler = self.sigkill_handler;
+    t.program = self.program;
+    t.program_size = self.program_size;
+
     // Handle Parent TrapFrame
     parent_trap_frame.x0 = t.id;
+
+    const va = 0;
+    const v_stack_start = 0xffffffffb000;
+    const v_stack_end = 0xfffffffff000;
+    mm.map.mapPages(
+        t.pgd.?,
+        va,
+        std.mem.alignForwardLog2(t.program_size, 12),
+        t.program,
+        .{
+            .user = true,
+            .read_only = false,
+            .el0_exec = true,
+            .el1_exec = false,
+            .mair_index = 1,
+        },
+        .PTE,
+    ) catch {
+        @panic("Cannot map user program memory!");
+    };
+    mm.map.mapPages(
+        t.pgd.?,
+        v_stack_start,
+        v_stack_end - v_stack_start,
+        t.user_stack,
+        .{
+            .user = true,
+            .read_only = false,
+            .el0_exec = false,
+            .el1_exec = false,
+            .mair_index = 1,
+        },
+        .PTE,
+    ) catch {
+        @panic("Cannot map user stack memory!");
+    };
+    mm.map.mapPages(
+        t.pgd.?,
+        0x3C000000,
+        0x4000000,
+        0xFFFF00003C000000,
+        .{
+            .user = true,
+            .read_only = false,
+            .el0_exec = false,
+            .el1_exec = false,
+            .mair_index = 0,
+        },
+        .PMD,
+    ) catch {
+        @panic("Cannot map device memory for user!");
+    };
+    mm.map.mapPages(
+        t.pgd.?,
+        0xfffffffff000,
+        0x1000,
+        @intFromPtr(&handlers.userSigreturnStub) & ~@as(u64, 0xfff),
+        .{
+            .user = true,
+            .read_only = true,
+            .el0_exec = true,
+            .el1_exec = false,
+            .mair_index = 1,
+        },
+        .PTE,
+    ) catch |err| {
+        log.info("{s}", .{@errorName(err)});
+        @panic("Cannot map sigreturn stub for user!");
+    };
 
     context.switchTo(context.getCurrent(), context.getCurrent());
 
@@ -183,10 +257,6 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
         // Handle Child TrapFrame
         var child_trap_frame: *TrapFrame = @ptrFromInt(t.kernel_stack + (@intFromPtr(parent_trap_frame) - self.kernel_stack));
         child_trap_frame.x0 = 0;
-        child_trap_frame.x29 = t.user_stack + (parent_trap_frame.x29 - self.user_stack);
-        child_trap_frame.sp_el0 = t.user_stack + (parent_trap_frame.sp_el0 - self.user_stack);
-
-        t.sigkill_handler = self.sigkill_handler;
 
         // Copy Kernel Context
         t.cpu_context = self.cpu_context;
@@ -217,7 +287,6 @@ pub fn exec(trap_frame: *TrapFrame, name: []const u8) void {
 
         self.program = @intFromPtr(new_program.ptr);
         self.program_size = new_program.len;
-        self.entry = @intFromPtr(new_program.ptr);
 
         asm volatile (
             \\ mov sp, %[arg0]
