@@ -6,10 +6,12 @@ const thread = @import("thread.zig");
 const main = @import("main.zig");
 const sched = @import("sched.zig");
 const uart = drivers.uart;
+const processor = @import("arch/aarch64/processor.zig");
 
 const mini_uart_reader = uart.mini_uart_reader;
 const mini_uart_writer = uart.mini_uart_writer;
 
+const TrapFrame = processor.TrapFrame;
 const Command = enum {
     None,
     Hello,
@@ -21,8 +23,9 @@ const Command = enum {
 };
 
 fn runSyscallImg() void {
-    _ = syscall.exec("syscall.img", null);
-    syscall.exit(-1);
+    var trap_frame: TrapFrame = undefined;
+    thread.exec(&trap_frame, "syscall.img");
+    thread.end();
 }
 
 fn parseCommand(command: []const u8) Command {
@@ -96,7 +99,7 @@ pub fn simpleShell() void {
                 }
             },
             Command.ExecFileContent => {
-                thread.create(main.getSingletonAllocator(), runSyscallImg, false);
+                thread.create(main.getSingletonAllocator(), runSyscallImg, true);
             },
         }
     }
