@@ -112,3 +112,34 @@ pub fn mapPages(
         current_pa += block_size;
     }
 }
+
+pub fn virtToPhys(
+    page_table: *PageTable,
+    va: u64,
+) Error!u64 {
+    // Try different granularities from largest to smallest
+    const entries = inline for (.{ Granularity.PUD, Granularity.PMD, Granularity.PTE }) |granularity| {
+        do: {
+            const entry = walk(page_table, va, false, granularity) catch {
+                break :do;
+            };
+
+            if (entry.valid) {
+                if (!entry.not_block or granularity == .PTE) {
+                    const block_size: usize = switch (granularity) {
+                        .PTE => 4096,
+                        .PMD => 2 * 1024 * 1024,
+                        .PUD => 1 * 1024 * 1024 * 1024,
+                    };
+                    const mask = block_size - 1;
+
+                    const phys_base = @as(u64, entry.phys_addr) << 12;
+
+                    return 0xffff000000000000 | phys_base | (va & mask);
+                }
+            }
+        }
+    } else return Error.NoEntry;
+
+    return entries;
+}
