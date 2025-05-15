@@ -43,6 +43,11 @@ pub fn getSingletonAllocator() std.mem.Allocator {
     return allocator;
 }
 
+var page_allocator: std.mem.Allocator = undefined;
+pub fn getSingletonPageAllocator() std.mem.Allocator {
+    return page_allocator;
+}
+
 // Main function for the kernel
 export fn main(dtb_address: usize) void {
     drivers.init();
@@ -92,7 +97,72 @@ export fn main(dtb_address: usize) void {
     fa.memory_reserve(dtb_address, dtb_address + dtb_size);
 
     var da = DynamicAllocator.init(&fa);
+    page_allocator = fa.allocator();
     allocator = da.allocator();
+
+    const kernel_pgd = page_allocator.create(mm.map.PageTable) catch {
+        @panic("Cannot create kernel page table!");
+    };
+    @memset(@as([]u8, @ptrCast(kernel_pgd)), 0);
+
+    mm.map.mapPages(
+        kernel_pgd,
+        arm_memory.@"0",
+        arm_memory.@"1",
+        arm_memory.@"0",
+        .{
+            .user = false,
+            .read_only = false,
+            .el0_exec = false,
+            .el1_exec = true,
+            .mair_index = 1,
+        },
+    ) catch {
+        @panic("Cannot map kernel memory!");
+    };
+    mm.map.mapPages(
+        kernel_pgd,
+        arm_memory.@"0" + arm_memory.@"1",
+        0x40000000 - arm_memory.@"1",
+        arm_memory.@"0" + arm_memory.@"1",
+        .{
+            .user = false,
+            .read_only = false,
+            .el0_exec = false,
+            .el1_exec = false,
+            .mair_index = 0,
+        },
+    ) catch {
+        @panic("Cannot map kernel memory!");
+    };
+    mm.map.mapPages(
+        kernel_pgd,
+        0x40000000,
+        0x40000000,
+        0x40000000,
+        .{
+            .user = false,
+            .read_only = false,
+            .el0_exec = false,
+            .el1_exec = false,
+            .mair_index = 0,
+        },
+    ) catch {
+        @panic("Cannot map kernel memory!");
+    };
+
+    const invalid_pgd = page_allocator.create(mm.map.PageTable) catch {
+        @panic("Cannot create kernel page table!");
+    };
+    @memset(@as([]u8, @ptrCast(invalid_pgd)), 0);
+
+    asm volatile (
+        \\ msr ttbr1_el1, %[arg0]
+        \\ msr ttbr0_el1, %[arg1]
+        :
+        : [arg0] "r" (@intFromPtr(kernel_pgd)),
+          [arg1] "r" (@intFromPtr(invalid_pgd)),
+    );
 
     initrd.init(allocator);
     defer initrd.deinit();

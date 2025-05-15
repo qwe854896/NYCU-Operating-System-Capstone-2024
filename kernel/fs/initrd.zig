@@ -25,7 +25,9 @@ pub fn initRamfsCallback(dtb_root: *dtb.Node) void {
     }
 
     const len: usize = @intFromPtr(initrd_end_ptr) - @intFromPtr(initrd_start_ptr);
+    initrd_start_ptr += 0xFFFF000000000000; // workaround
     initrd = initrd_start_ptr[0..len];
+    initrd_start_ptr -= 0xFFFF000000000000; // workaround
 }
 
 pub fn getInitrdStartPtr() usize {

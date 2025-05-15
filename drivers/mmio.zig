@@ -1,7 +1,8 @@
 // Reference: https://www.scattered-thoughts.net/writing/mmio-in-zig/
 const std = @import("std");
+const config = @import("config");
 
-pub const base_address = 0x3F000000;
+pub const base_address = config.mmio_base_address;
 
 pub fn Register(comptime Read: type, comptime Write: type) type {
     return struct {

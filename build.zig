@@ -10,8 +10,6 @@ pub fn build(b: *Build) !void {
     const target = setupAArch64Target(b);
     const optimize = b.standardOptimizeOption(.{});
 
-    const drivers = b.createModule(.{ .root_source_file = b.path("drivers/main.zig") });
-
     const kernel = addStaticExecutable(b, .{
         .name = "kernel8.elf",
         .root_source = "kernel/main.zig",
@@ -19,7 +17,8 @@ pub fn build(b: *Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    kernel.root_module.addImport("drivers", drivers);
+    const kernel_drivers = addDriversModule(b, 0xFFFF00003F000000);
+    kernel.root_module.addImport("drivers", kernel_drivers);
 
     const bootloader = addStaticExecutable(b, .{
         .name = "bootloader.elf",
@@ -28,7 +27,8 @@ pub fn build(b: *Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    bootloader.root_module.addImport("drivers", drivers);
+    const bootloader_drivers = addDriversModule(b, 0x000000003F000000);
+    bootloader.root_module.addImport("drivers", bootloader_drivers);
 
     b.installArtifact(kernel);
     if (bootloader_mode) b.installArtifact(bootloader);
@@ -66,6 +66,17 @@ fn addStaticExecutable(b: *Build, options: struct {
     });
     exe.setLinkerScript(b.path(options.linker_script));
     return exe;
+}
+
+fn addDriversModule(
+    b: *Build,
+    mmio_base_address: usize,
+) *Build.Module {
+    const drivers = b.createModule(.{ .root_source_file = b.path("drivers/main.zig") });
+    const drivers_options = b.addOptions();
+    drivers_options.addOption(usize, "mmio_base_address", mmio_base_address);
+    drivers.addOptions("config", drivers_options);
+    return drivers;
 }
 
 fn setupExecutionSteps(
