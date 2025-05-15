@@ -48,6 +48,17 @@ export fn syscallEntry(sp: usize) void {
         return;
     }
 
+    if ((registers.getEsrEl1() >> 26) != 0b010101) {
+        log.info("Exception occurred! tid: {}", .{self.id});
+        log.info("Exception:", .{});
+        log.info("  SPSR_EL1: 0b{b:0>32}", .{trap_frame.spsr_el1});
+        log.info("  ELR_EL1: 0x{X}", .{trap_frame.elr_el1});
+        log.info("  ESR_EL1: 0b{b:0>32}", .{registers.getEsrEl1()});
+        while (true) {
+            asm volatile ("nop");
+        }
+    }
+
     dispatcher.dispatch(trap_frame);
 }
 
