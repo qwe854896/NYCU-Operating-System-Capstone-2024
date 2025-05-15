@@ -112,7 +112,7 @@ fn buildQemuArgs(b: *Build, kernel_path: []const u8, serial_mode: []const u8) !A
         "-serial",
         serial_mode,
         "-initrd",
-        "assets/lab05/initramfs.cpio",
+        "assets/initramfs.cpio",
         "-dtb",
         "assets/bcm2710-rpi-3-b-plus.dtb",
         "-kernel",

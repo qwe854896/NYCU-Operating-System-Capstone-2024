@@ -24,7 +24,7 @@ const Command = enum {
 
 fn runSyscallImg() void {
     var trap_frame: TrapFrame = undefined;
-    thread.exec(&trap_frame, "syscall.img");
+    thread.exec(&trap_frame, "vm.img");
     thread.end();
 }
 
