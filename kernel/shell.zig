@@ -99,7 +99,7 @@ pub fn simpleShell() void {
                 }
             },
             Command.ExecFileContent => {
-                thread.create(main.getSingletonAllocator(), runSyscallImg, true);
+                thread.create(main.getSingletonAllocator(), runSyscallImg);
             },
         }
     }

@@ -170,7 +170,7 @@ export fn main(dtb_address: usize) void {
     initrd.init(allocator);
     defer initrd.deinit();
 
-    thread.create(allocator, shell.simpleShell, true);
+    thread.create(allocator, shell.simpleShell);
     sched.idle(&allocator);
 }
 

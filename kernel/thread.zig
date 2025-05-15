@@ -29,7 +29,6 @@ pub const ThreadContext = struct {
 
     id: u32,
     ended: bool = false,
-    is_kernel_thread: bool = false,
 
     entry: usize,
     trap_frame: ?*processor.TrapFrame = null,
@@ -48,7 +47,7 @@ pub const ThreadContext = struct {
     allocator: std.mem.Allocator,
     cpu_context: processor.CpuContext,
 
-    pub fn init(allocator: std.mem.Allocator, id: u32, entry: ?*const fn () void, stack_size: usize, is_kernel_thread: bool) Self {
+    pub fn init(allocator: std.mem.Allocator, id: u32, entry: ?*const fn () void, stack_size: usize) Self {
         const kernel_stack = allocator.alignedAlloc(u8, 16, stack_size) catch {
             @panic("Out of Memory! No buffer for thread stack.");
         };
@@ -56,7 +55,6 @@ pub const ThreadContext = struct {
         var self = Self{
             .id = id,
             .entry = @intFromPtr(entry),
-            .is_kernel_thread = is_kernel_thread,
             .kernel_stack = @intFromPtr(kernel_stack.ptr),
             .kernel_stack_size = kernel_stack.len,
             .allocator = allocator,
@@ -85,10 +83,8 @@ pub const ThreadContext = struct {
         const kernel_stack: []u8 = @as([*]u8, @ptrFromInt(self.kernel_stack))[0..self.kernel_stack_size];
         self.allocator.free(kernel_stack);
 
-        if (!self.is_kernel_thread) {
-            const user_stack: []u8 = @as([*]u8, @ptrFromInt(self.user_stack))[0..self.user_stack_size];
-            self.allocator.free(user_stack);
-        }
+        const user_stack: []u8 = @as([*]u8, @ptrFromInt(self.user_stack))[0..self.user_stack_size];
+        self.allocator.free(user_stack);
 
         if (self.program_size != 0) {
             // const program: []u8 = @as([*]u8, @ptrFromInt(self.program))[0..self.program_size];
@@ -97,9 +93,9 @@ pub const ThreadContext = struct {
     }
 };
 
-pub fn create(allocator: std.mem.Allocator, entry: fn () void, is_kernel_thread: bool) void {
+pub fn create(allocator: std.mem.Allocator, entry: fn () void) void {
     pid_count += 1;
-    sched.appendThread(ThreadContext.init(allocator, pid_count, entry, 0x8000, is_kernel_thread));
+    sched.appendThread(ThreadContext.init(allocator, pid_count, entry, 0x8000));
 }
 
 fn startUser() void {
@@ -166,7 +162,7 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
 
     pid_count += 1;
 
-    var t = ThreadContext.init(self.allocator, pid_count, null, self.user_stack_size, false);
+    var t = ThreadContext.init(self.allocator, pid_count, null, self.user_stack_size);
 
     const parent_kernel_stack: []u8 = @as([*]u8, @ptrFromInt(self.kernel_stack))[0..self.kernel_stack_size];
     const parent_user_stack: []u8 = @as([*]u8, @ptrFromInt(self.user_stack))[0..self.user_stack_size];
