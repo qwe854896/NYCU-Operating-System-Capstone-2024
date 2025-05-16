@@ -40,14 +40,6 @@ export fn syscallEntry(sp: usize) void {
     var self: *ThreadContext = thread.threadFromCurrent();
     self.trap_frame = trap_frame;
 
-    // mrs x0, CurrentEL
-    const inst: *u32 = @ptrFromInt(trap_frame.elr_el1);
-    if (inst.* == 0xd5384240) {
-        trap_frame.elr_el1 += 4;
-        trap_frame.x0 = 0 << 2;
-        return;
-    }
-
     if ((registers.getEsrEl1() >> 26) != 0b010101) {
         log.info("Exception occurred! tid: {}", .{self.id});
         log.info("Exception:", .{});
