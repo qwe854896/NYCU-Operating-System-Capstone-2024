@@ -19,6 +19,7 @@ export fn exceptionEntry(sp: usize) void {
     log.info("  SPSR_EL1: 0b{b:0>32}", .{trap_frame.spsr_el1});
     log.info("  ELR_EL1: 0x{X}", .{trap_frame.elr_el1});
     log.info("  ESR_EL1: 0b{b:0>32}", .{registers.getEsrEl1()});
+    log.info("  FAR_EL1: 0x{X}", .{registers.getFarEl1()});
 
     while (true) {
         asm volatile ("nop");

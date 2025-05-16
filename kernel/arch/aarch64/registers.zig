@@ -14,6 +14,14 @@ pub fn getCntfrqEl0() usize {
     return value;
 }
 
+pub fn getFarEl1() usize {
+    var value: usize = undefined;
+    asm volatile ("mrs %[v], far_el1"
+        : [v] "=r" (value),
+    );
+    return value;
+}
+
 pub fn setCntpTvalEl0(value: usize) void {
     asm volatile ("msr cntp_tval_el0, %[v]"
         :
