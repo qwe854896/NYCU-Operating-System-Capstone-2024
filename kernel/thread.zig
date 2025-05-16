@@ -155,6 +155,10 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
     t.sigkill_handler = self.sigkill_handler;
     t.program = self.program;
 
+    // Handle Child TrapFrame
+    t.trap_frame = @ptrFromInt(@intFromPtr(t.kernel_stack.ptr) + (@intFromPtr(parent_trap_frame) - @intFromPtr(self.kernel_stack.ptr)));
+    t.trap_frame.?.x0 = 0;
+
     // Handle Parent TrapFrame
     parent_trap_frame.x0 = t.id;
 
@@ -231,17 +235,9 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
 
     const new_self: *volatile ThreadContext = threadFromCurrent();
     if (@intFromPtr(self) == @intFromPtr(new_self)) {
-        // Handle Child TrapFrame
-        t.trap_frame = @ptrFromInt(@intFromPtr(t.kernel_stack.ptr) + (@intFromPtr(parent_trap_frame) - @intFromPtr(self.kernel_stack.ptr)));
-        t.trap_frame.?.x0 = 0;
-
-        // Copy Kernel Context
         t.cpu_context = self.cpu_context;
-
-        // Handle Child Context
         t.cpu_context.fp = @intFromPtr(t.kernel_stack.ptr) + (self.cpu_context.fp - @intFromPtr(self.kernel_stack.ptr));
         t.cpu_context.sp = @intFromPtr(t.kernel_stack.ptr) + (self.cpu_context.sp - @intFromPtr(self.kernel_stack.ptr));
-
         sched.appendThread(t);
     }
 }
