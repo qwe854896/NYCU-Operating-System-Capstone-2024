@@ -79,7 +79,7 @@ pub const ThreadContext = struct {
 
 pub fn create(allocator: std.mem.Allocator, entry: fn () void) void {
     pid_count += 1;
-    sched.appendThread(ThreadContext.init(allocator, pid_count, entry, 0x8000));
+    sched.appendThread(ThreadContext.init(allocator, pid_count, entry, 0x4000));
 }
 
 fn startUser() void {
