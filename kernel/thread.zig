@@ -32,7 +32,6 @@ pub const ThreadContext = struct {
     entry: usize,
 
     kernel_stack: []u8,
-    user_stack: []u8,
     pgd: *mm.map.PageTable,
 
     program_name: ?[]u8 = null,
@@ -46,7 +45,7 @@ pub const ThreadContext = struct {
     allocator: std.mem.Allocator,
     cpu_context: processor.CpuContext,
 
-    pub fn init(allocator: std.mem.Allocator, id: u32, entry: ?*const fn () void, user_stack_size: usize) Self {
+    pub fn init(allocator: std.mem.Allocator, id: u32, entry: ?*const fn () void) Self {
         var self = Self{
             .id = id,
             .entry = @intFromPtr(entry),
@@ -55,9 +54,6 @@ pub const ThreadContext = struct {
             },
             .pgd = allocator.create(mm.map.PageTable) catch {
                 @panic("Out of Memory! No buffer for thread page table.");
-            },
-            .user_stack = allocator.alignedAlloc(u8, 16, user_stack_size) catch {
-                @panic("Out of Memory! No buffer for thread user stack.");
             },
             .allocator = allocator,
             .cpu_context = .{
@@ -71,7 +67,6 @@ pub const ThreadContext = struct {
 
     pub fn deinit(self: *Self) void {
         self.allocator.free(self.kernel_stack);
-        self.allocator.free(self.user_stack);
         if (self.program_name) |pn| {
             self.allocator.free(pn);
         }
@@ -80,14 +75,14 @@ pub const ThreadContext = struct {
 
 pub fn create(allocator: std.mem.Allocator, entry: fn () void) void {
     pid_count += 1;
-    sched.appendThread(ThreadContext.init(allocator, pid_count, entry, 0x4000));
+    sched.appendThread(ThreadContext.init(allocator, pid_count, entry));
 }
 
 fn startUser() void {
     const self: *ThreadContext = threadFromCurrent();
     const va = 0;
     const v_stack_end = 0xfffffffff000;
-    preparePageTableForUser(self.pgd, self.user_stack);
+    preparePageTableForUser(self.pgd);
     context.switchTtbr0(@intFromPtr(self.pgd));
     jumpToUserMode(va, v_stack_end);
     syscall.exit(0);
@@ -115,11 +110,11 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
 
     pid_count += 1;
 
-    var t = ThreadContext.init(self.allocator, pid_count, null, self.user_stack.len);
+    var t = ThreadContext.init(self.allocator, pid_count, null);
 
     // Copy Stack
     @memcpy(t.kernel_stack, self.kernel_stack);
-    @memcpy(t.user_stack, self.user_stack);
+    // @memcpy(t.user_stack, self.user_stack);
 
     t.sigkill_handler = self.sigkill_handler;
     t.program_name = self.allocator.alloc(u8, self.program_name.?.len) catch {
@@ -135,7 +130,7 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
     // Handle Parent TrapFrame
     parent_trap_frame.x0 = t.id;
 
-    preparePageTableForUser(t.pgd, t.user_stack);
+    preparePageTableForUser(t.pgd);
 
     context.switchTo(context.getCurrent(), context.getCurrent());
 
@@ -191,7 +186,6 @@ pub fn kill(pid: u32) void {
 
 fn preparePageTableForUser(
     pgd: *mm.map.PageTable,
-    user_stack: []u8,
 ) void {
     const self: *ThreadContext = threadFromCurrent();
     const va = 0;
@@ -221,7 +215,7 @@ fn preparePageTableForUser(
         pgd,
         v_stack_start,
         v_stack_end - v_stack_start,
-        @intFromPtr(user_stack.ptr),
+        0,
         .{
             .access = false,
             .user = true,
