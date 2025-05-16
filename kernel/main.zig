@@ -103,7 +103,7 @@ export fn main(dtb_address: usize) void {
     const kernel_pgd = page_allocator.create(mm.map.PageTable) catch {
         @panic("Cannot create kernel page table!");
     };
-    @memset(@as([]u8, @ptrCast(kernel_pgd)), 0);
+    kernel_pgd.* = @splat(@bitCast(@as(u64, 0)));
 
     mm.map.mapPages(
         kernel_pgd,
@@ -157,7 +157,7 @@ export fn main(dtb_address: usize) void {
     const invalid_pgd = page_allocator.create(mm.map.PageTable) catch {
         @panic("Cannot create kernel page table!");
     };
-    @memset(@as([]u8, @ptrCast(invalid_pgd)), 0);
+    invalid_pgd.* = @splat(@bitCast(@as(u64, 0)));
 
     asm volatile (
         \\ msr ttbr1_el1, %[arg0]

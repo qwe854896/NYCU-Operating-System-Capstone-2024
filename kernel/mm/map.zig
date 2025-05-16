@@ -47,8 +47,8 @@ fn walk(
 
             if (!alloc) return Error.NoEntry;
 
-            const new_table = try getSingletonPageAllocator().alignedAlloc(u8, 4096, 4096);
-            @memset(new_table, 0);
+            const new_table = try getSingletonPageAllocator().create(PageTable);
+            new_table.* = @splat(@bitCast(@as(u64, 0)));
 
             entry.* = .{
                 .valid = true,

@@ -63,6 +63,7 @@ pub const ThreadContext = struct {
                 .pc = @intFromPtr(&startKernel),
             },
         };
+        self.pgd.* = @splat(@bitCast(@as(u64, 0)));
         self.cpu_context.sp = @as(usize, @intFromPtr(self.kernel_stack.ptr)) + self.kernel_stack.len;
         return self;
     }
