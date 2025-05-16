@@ -66,7 +66,7 @@ pub fn sysExec(trap_frame: *TrapFrame) void {
 pub fn sysMboxCall(trap_frame: *TrapFrame) void {
     const self: *ThreadContext = thread.threadFromCurrent();
     const va = trap_frame.x1;
-    const pa = mm.map.virtToPhys(self.pgd.?, va) catch {
+    const pa = mm.map.virtToPhys(self.pgd, va) catch {
         trap_frame.x0 = 0;
         return;
     };
@@ -80,7 +80,7 @@ pub fn sysSigkill(trap_frame: *TrapFrame) void {
     const ctx = sched.findThreadByPid(pid);
     if (ctx) |t| {
         if (signal == numbers.signals.sigkill) {
-            if (t.sigkill_handler == 0) {
+            if (t.sigkill_handler == null) {
                 thread.kill(@intCast(trap_frame.x0));
             } else {
                 t.has_sigkill = true;
@@ -111,7 +111,7 @@ pub fn isSigkillPending() void {
     @as(*TrapFrame, @ptrFromInt(sp_el0)).* = trap_frame.*;
 
     trap_frame.x30 = 0xfffffffff000 | (@intFromPtr(&userSigreturnStub) & 0xfff); // lr
-    trap_frame.elr_el1 = self.sigkill_handler;
+    trap_frame.elr_el1 = self.sigkill_handler.?;
     trap_frame.sp_el0 = sp_el0;
 }
 

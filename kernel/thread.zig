@@ -29,68 +29,50 @@ pub const ThreadContext = struct {
     const Self = @This();
 
     id: u32,
-    ended: bool = false,
-
     entry: usize,
+
+    kernel_stack: []u8,
+    pgd: *mm.map.PageTable,
+    user_stack: []u8,
+
+    program: ?[]u8 = null,
     trap_frame: ?*processor.TrapFrame = null,
+    sigkill_handler: ?usize = null,
 
-    kernel_stack: usize,
-    kernel_stack_size: usize,
-    user_stack: usize = 0,
-    user_stack_size: usize = 0,
-    program: usize = 0,
-    program_size: usize = 0,
-    pgd: ?*mm.map.PageTable = null,
-
-    sigkill_handler: usize = 0,
+    ended: bool = false,
     has_sigkill: bool = false,
 
     allocator: std.mem.Allocator,
     cpu_context: processor.CpuContext,
 
-    pub fn init(allocator: std.mem.Allocator, id: u32, entry: ?*const fn () void, stack_size: usize) Self {
-        const kernel_stack = allocator.alignedAlloc(u8, 16, stack_size) catch {
-            @panic("Out of Memory! No buffer for thread stack.");
-        };
-
+    pub fn init(allocator: std.mem.Allocator, id: u32, entry: ?*const fn () void, user_stack_size: usize) Self {
         var self = Self{
             .id = id,
             .entry = @intFromPtr(entry),
-            .kernel_stack = @intFromPtr(kernel_stack.ptr),
-            .kernel_stack_size = kernel_stack.len,
+            .kernel_stack = allocator.alignedAlloc(u8, 16, 0x8000) catch {
+                @panic("Out of Memory! No buffer for thread kernel stack.");
+            },
+            .pgd = allocator.create(mm.map.PageTable) catch {
+                @panic("Out of Memory! No buffer for thread page table.");
+            },
+            .user_stack = allocator.alignedAlloc(u8, 16, user_stack_size) catch {
+                @panic("Out of Memory! No buffer for thread user stack.");
+            },
             .allocator = allocator,
-            .cpu_context = .{},
+            .cpu_context = .{
+                .pc = @intFromPtr(&startKernel),
+            },
         };
-
-        self.cpu_context.sp = self.kernel_stack + self.kernel_stack_size;
-
-        const user_stack = allocator.alignedAlloc(u8, 16, stack_size) catch {
-            @panic("Out of Memory! No buffer for thread stack.");
-        };
-        self.user_stack = @intFromPtr(user_stack.ptr);
-        self.user_stack_size = user_stack.len;
-
-        self.pgd = allocator.create(mm.map.PageTable) catch {
-            @panic("Cannot create kernel page table!");
-        };
-        @memset(@as([]u8, @ptrCast(self.pgd.?)), 0);
-
-        self.cpu_context.pc = @intFromPtr(&startKernel);
-
+        self.cpu_context.sp = @as(usize, @intFromPtr(self.kernel_stack.ptr)) + self.kernel_stack.len;
         return self;
     }
 
     pub fn deinit(self: *Self) void {
-        const kernel_stack: []u8 = @as([*]u8, @ptrFromInt(self.kernel_stack))[0..self.kernel_stack_size];
-        self.allocator.free(kernel_stack);
-
-        const user_stack: []u8 = @as([*]u8, @ptrFromInt(self.user_stack))[0..self.user_stack_size];
-        self.allocator.free(user_stack);
-
-        if (self.program_size != 0) {
-            // const program: []u8 = @as([*]u8, @ptrFromInt(self.program))[0..self.program_size];
-            // self.allocator.free(program);
-        }
+        self.allocator.free(self.kernel_stack);
+        self.allocator.free(self.user_stack);
+        // if (self.program) |p| {
+        // self.allocator.free(p);
+        // }
     }
 };
 
@@ -105,10 +87,10 @@ fn startUser() void {
     const v_stack_start = 0xffffffffb000;
     const v_stack_end = 0xfffffffff000;
     mm.map.mapPages(
-        self.pgd.?,
+        self.pgd,
         va,
-        std.mem.alignForwardLog2(self.program_size, 12),
-        self.program,
+        std.mem.alignForwardLog2(self.program.?.len, 12),
+        @intFromPtr(self.program.?.ptr),
         .{
             .user = true,
             .read_only = false,
@@ -121,10 +103,10 @@ fn startUser() void {
         @panic("Cannot map user program memory!");
     };
     mm.map.mapPages(
-        self.pgd.?,
+        self.pgd,
         v_stack_start,
         v_stack_end - v_stack_start,
-        self.user_stack,
+        @intFromPtr(self.user_stack.ptr),
         .{
             .user = true,
             .read_only = false,
@@ -136,7 +118,7 @@ fn startUser() void {
     ) catch {
         @panic("Cannot map user stack memory!");
     };
-    context.switchTtbr0(@intFromPtr(self.pgd.?));
+    context.switchTtbr0(@intFromPtr(self.pgd));
     jumpToUserMode(va, v_stack_end);
     syscall.exit(0);
     while (true) {
@@ -163,20 +145,14 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
 
     pid_count += 1;
 
-    var t = ThreadContext.init(self.allocator, pid_count, null, self.user_stack_size);
-
-    const parent_kernel_stack: []u8 = @as([*]u8, @ptrFromInt(self.kernel_stack))[0..self.kernel_stack_size];
-    const parent_user_stack: []u8 = @as([*]u8, @ptrFromInt(self.user_stack))[0..self.user_stack_size];
-    const child_kernel_stack: []u8 = @as([*]u8, @ptrFromInt(t.kernel_stack))[0..t.kernel_stack_size];
-    const child_user_stack: []u8 = @as([*]u8, @ptrFromInt(t.user_stack))[0..t.user_stack_size];
+    var t = ThreadContext.init(self.allocator, pid_count, null, self.user_stack.len);
 
     // Copy Stack
-    @memcpy(child_kernel_stack, parent_kernel_stack);
-    @memcpy(child_user_stack, parent_user_stack);
+    @memcpy(t.kernel_stack, self.kernel_stack);
+    @memcpy(t.user_stack, self.user_stack);
 
     t.sigkill_handler = self.sigkill_handler;
     t.program = self.program;
-    t.program_size = self.program_size;
 
     // Handle Parent TrapFrame
     parent_trap_frame.x0 = t.id;
@@ -185,10 +161,10 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
     const v_stack_start = 0xffffffffb000;
     const v_stack_end = 0xfffffffff000;
     mm.map.mapPages(
-        t.pgd.?,
+        t.pgd,
         va,
-        std.mem.alignForwardLog2(t.program_size, 12),
-        t.program,
+        std.mem.alignForwardLog2(t.program.?.len, 12),
+        @intFromPtr(t.program.?.ptr),
         .{
             .user = true,
             .read_only = false,
@@ -201,10 +177,10 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
         @panic("Cannot map user program memory!");
     };
     mm.map.mapPages(
-        t.pgd.?,
+        t.pgd,
         v_stack_start,
         v_stack_end - v_stack_start,
-        t.user_stack,
+        @intFromPtr(t.user_stack.ptr),
         .{
             .user = true,
             .read_only = false,
@@ -217,7 +193,7 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
         @panic("Cannot map user stack memory!");
     };
     mm.map.mapPages(
-        t.pgd.?,
+        t.pgd,
         0x3C000000,
         0x4000000,
         0xFFFF00003C000000,
@@ -233,7 +209,7 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
         @panic("Cannot map device memory for user!");
     };
     mm.map.mapPages(
-        t.pgd.?,
+        t.pgd,
         0xfffffffff000,
         0x1000,
         @intFromPtr(&handlers.userSigreturnStub) & ~@as(u64, 0xfff),
@@ -255,15 +231,15 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
     const new_self: *volatile ThreadContext = threadFromCurrent();
     if (@intFromPtr(self) == @intFromPtr(new_self)) {
         // Handle Child TrapFrame
-        var child_trap_frame: *TrapFrame = @ptrFromInt(t.kernel_stack + (@intFromPtr(parent_trap_frame) - self.kernel_stack));
-        child_trap_frame.x0 = 0;
+        t.trap_frame = @ptrFromInt(@intFromPtr(t.kernel_stack.ptr) + (@intFromPtr(parent_trap_frame) - @intFromPtr(self.kernel_stack.ptr)));
+        t.trap_frame.?.x0 = 0;
 
         // Copy Kernel Context
         t.cpu_context = self.cpu_context;
 
         // Handle Child Context
-        t.cpu_context.fp = t.kernel_stack + (self.cpu_context.fp - self.kernel_stack);
-        t.cpu_context.sp = t.kernel_stack + (self.cpu_context.sp - self.kernel_stack);
+        t.cpu_context.fp = @intFromPtr(t.kernel_stack.ptr) + (self.cpu_context.fp - @intFromPtr(self.kernel_stack.ptr));
+        t.cpu_context.sp = @intFromPtr(t.kernel_stack.ptr) + (self.cpu_context.sp - @intFromPtr(self.kernel_stack.ptr));
 
         sched.appendThread(t);
     }
@@ -274,25 +250,21 @@ pub fn exec(trap_frame: *TrapFrame, name: []const u8) void {
     const program = initrd.getFileContent(name);
 
     if (program) |p| {
-        if (self.program_size != 0) {
-            // const old_program: []u8 = @as([*]u8, @ptrFromInt(self.program))[0..self.program_size];
-            // self.allocator.free(old_program);
-        }
+        // if (self.program) |sp| {
+        //     self.allocator.free(sp);
+        // }
 
-        const new_program = self.allocator.alignedAlloc(u8, 16, p.len) catch {
+        self.program = self.allocator.alignedAlloc(u8, 16, p.len) catch {
             @panic("Out of Memory! No buffer for new program.");
         };
-        log.info("New program address: 0x{X}", .{@intFromPtr(new_program.ptr)});
-        @memcpy(new_program, p);
-
-        self.program = @intFromPtr(new_program.ptr);
-        self.program_size = new_program.len;
+        log.info("New program address: 0x{X}", .{@intFromPtr(self.program.?.ptr)});
+        @memcpy(self.program.?, p);
 
         asm volatile (
             \\ mov sp, %[arg0]
             \\ br %[arg1]
             :
-            : [arg0] "r" (self.kernel_stack + self.kernel_stack_size),
+            : [arg0] "r" (@intFromPtr(self.kernel_stack.ptr) + self.kernel_stack.len),
               [arg1] "r" (@intFromPtr(&startUser)),
         );
 
