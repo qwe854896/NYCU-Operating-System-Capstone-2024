@@ -85,40 +85,8 @@ pub fn create(allocator: std.mem.Allocator, entry: fn () void) void {
 fn startUser() void {
     const self: *ThreadContext = threadFromCurrent();
     const va = 0;
-    const v_stack_start = 0xffffffffb000;
     const v_stack_end = 0xfffffffff000;
-    mm.map.mapPages(
-        self.pgd,
-        va,
-        std.mem.alignForwardLog2(self.program.?.len, 12),
-        @intFromPtr(self.program.?.ptr),
-        .{
-            .user = true,
-            .read_only = false,
-            .el0_exec = true,
-            .el1_exec = false,
-            .mair_index = 1,
-        },
-        .PTE,
-    ) catch {
-        @panic("Cannot map user program memory!");
-    };
-    mm.map.mapPages(
-        self.pgd,
-        v_stack_start,
-        v_stack_end - v_stack_start,
-        @intFromPtr(self.user_stack.ptr),
-        .{
-            .user = true,
-            .read_only = false,
-            .el0_exec = false,
-            .el1_exec = false,
-            .mair_index = 1,
-        },
-        .PTE,
-    ) catch {
-        @panic("Cannot map user stack memory!");
-    };
+    preparePageTableForUser(self.pgd, self.program, self.user_stack);
     context.switchTtbr0(@intFromPtr(self.pgd));
     jumpToUserMode(va, v_stack_end);
     syscall.exit(0);
@@ -162,74 +130,7 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
     // Handle Parent TrapFrame
     parent_trap_frame.x0 = t.id;
 
-    const va = 0;
-    const v_stack_start = 0xffffffffb000;
-    const v_stack_end = 0xfffffffff000;
-    mm.map.mapPages(
-        t.pgd,
-        va,
-        std.mem.alignForwardLog2(t.program.?.len, 12),
-        @intFromPtr(t.program.?.ptr),
-        .{
-            .user = true,
-            .read_only = false,
-            .el0_exec = true,
-            .el1_exec = false,
-            .mair_index = 1,
-        },
-        .PTE,
-    ) catch {
-        @panic("Cannot map user program memory!");
-    };
-    mm.map.mapPages(
-        t.pgd,
-        v_stack_start,
-        v_stack_end - v_stack_start,
-        @intFromPtr(t.user_stack.ptr),
-        .{
-            .user = true,
-            .read_only = false,
-            .el0_exec = false,
-            .el1_exec = false,
-            .mair_index = 1,
-        },
-        .PTE,
-    ) catch {
-        @panic("Cannot map user stack memory!");
-    };
-    mm.map.mapPages(
-        t.pgd,
-        0x3C000000,
-        0x4000000,
-        0xFFFF00003C000000,
-        .{
-            .user = true,
-            .read_only = false,
-            .el0_exec = false,
-            .el1_exec = false,
-            .mair_index = 0,
-        },
-        .PMD,
-    ) catch {
-        @panic("Cannot map device memory for user!");
-    };
-    mm.map.mapPages(
-        t.pgd,
-        0xfffffffff000,
-        0x1000,
-        @intFromPtr(&handlers.userSigreturnStub) & ~@as(u64, 0xfff),
-        .{
-            .user = true,
-            .read_only = true,
-            .el0_exec = true,
-            .el1_exec = false,
-            .mair_index = 1,
-        },
-        .PTE,
-    ) catch |err| {
-        log.info("{s}", .{@errorName(err)});
-        @panic("Cannot map sigreturn stub for user!");
-    };
+    preparePageTableForUser(t.pgd, t.program, t.user_stack);
 
     context.switchTo(context.getCurrent(), context.getCurrent());
 
@@ -277,4 +178,86 @@ pub fn kill(pid: u32) void {
         end();
     }
     sched.removeThread(pid);
+}
+
+fn preparePageTableForUser(
+    pgd: *mm.map.PageTable,
+    program: ?[]const u8,
+    user_stack: []u8,
+) void {
+    const va = 0;
+    const v_stack_start = 0xffffffffb000;
+    const v_stack_end = 0xfffffffff000;
+
+    if (program) |prog| {
+        mm.map.mapPages(
+            pgd,
+            va,
+            std.mem.alignForwardLog2(prog.len, 12),
+            @intFromPtr(prog.ptr),
+            .{
+                .user = true,
+                .read_only = false,
+                .el0_exec = true,
+                .el1_exec = false,
+                .mair_index = 1,
+            },
+            .PTE,
+        ) catch {
+            @panic("Cannot map user program memory!");
+        };
+    } else {
+        @panic("Program must be provided to map user program memory!");
+    }
+
+    mm.map.mapPages(
+        pgd,
+        v_stack_start,
+        v_stack_end - v_stack_start,
+        @intFromPtr(user_stack.ptr),
+        .{
+            .user = true,
+            .read_only = false,
+            .el0_exec = false,
+            .el1_exec = false,
+            .mair_index = 1,
+        },
+        .PTE,
+    ) catch {
+        @panic("Cannot map user stack memory!");
+    };
+
+    mm.map.mapPages(
+        pgd,
+        0x3C000000,
+        0x4000000,
+        0xFFFF00003C000000,
+        .{
+            .user = true,
+            .read_only = false,
+            .el0_exec = false,
+            .el1_exec = false,
+            .mair_index = 0,
+        },
+        .PMD,
+    ) catch {
+        @panic("Cannot map device memory for user!");
+    };
+    mm.map.mapPages(
+        pgd,
+        0xfffffffff000,
+        0x1000,
+        @intFromPtr(&handlers.userSigreturnStub) & ~@as(u64, 0xfff),
+        .{
+            .user = true,
+            .read_only = true,
+            .el0_exec = true,
+            .el1_exec = false,
+            .mair_index = 1,
+        },
+        .PTE,
+    ) catch |err| {
+        log.info("{s}", .{@errorName(err)});
+        @panic("Cannot map sigreturn stub for user!");
+    };
 }
