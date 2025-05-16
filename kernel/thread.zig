@@ -32,10 +32,11 @@ pub const ThreadContext = struct {
     entry: usize,
 
     kernel_stack: []u8,
-    pgd: *mm.map.PageTable,
     user_stack: []u8,
+    pgd: *mm.map.PageTable,
 
-    program: ?[]u8 = null,
+    program_name: ?[]u8 = null,
+    program_len: ?usize = null,
     trap_frame: ?*processor.TrapFrame = null,
     sigkill_handler: ?usize = null,
 
@@ -71,9 +72,9 @@ pub const ThreadContext = struct {
     pub fn deinit(self: *Self) void {
         self.allocator.free(self.kernel_stack);
         self.allocator.free(self.user_stack);
-        // if (self.program) |p| {
-        // self.allocator.free(p);
-        // }
+        if (self.program_name) |pn| {
+            self.allocator.free(pn);
+        }
     }
 };
 
@@ -86,7 +87,7 @@ fn startUser() void {
     const self: *ThreadContext = threadFromCurrent();
     const va = 0;
     const v_stack_end = 0xfffffffff000;
-    preparePageTableForUser(self.pgd, self.program, self.user_stack);
+    preparePageTableForUser(self.pgd, self.user_stack);
     context.switchTtbr0(@intFromPtr(self.pgd));
     jumpToUserMode(va, v_stack_end);
     syscall.exit(0);
@@ -121,7 +122,11 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
     @memcpy(t.user_stack, self.user_stack);
 
     t.sigkill_handler = self.sigkill_handler;
-    t.program = self.program;
+    t.program_name = self.allocator.alloc(u8, self.program_name.?.len) catch {
+        @panic("Out of Memory! No buffer for new program name.");
+    };
+    @memcpy(t.program_name.?, self.program_name.?);
+    t.program_len = self.program_len;
 
     // Handle Child TrapFrame
     t.trap_frame = @ptrFromInt(@intFromPtr(t.kernel_stack.ptr) + (@intFromPtr(parent_trap_frame) - @intFromPtr(self.kernel_stack.ptr)));
@@ -130,7 +135,7 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
     // Handle Parent TrapFrame
     parent_trap_frame.x0 = t.id;
 
-    preparePageTableForUser(t.pgd, t.program, t.user_stack);
+    preparePageTableForUser(t.pgd, t.user_stack);
 
     context.switchTo(context.getCurrent(), context.getCurrent());
 
@@ -148,15 +153,19 @@ pub fn exec(trap_frame: *TrapFrame, name: []const u8) void {
     const program = initrd.getFileContent(name);
 
     if (program) |p| {
-        // if (self.program) |sp| {
-        //     self.allocator.free(sp);
-        // }
-
-        self.program = self.allocator.alignedAlloc(u8, 16, p.len) catch {
-            @panic("Out of Memory! No buffer for new program.");
+        if (self.program_name) |pn| {
+            self.allocator.free(pn);
+        }
+        self.program_name = self.allocator.alloc(u8, name.len) catch {
+            @panic("Out of Memory! No buffer for new program name.");
         };
-        log.info("New program address: 0x{X}", .{@intFromPtr(self.program.?.ptr)});
-        @memcpy(self.program.?, p);
+        @memcpy(self.program_name.?, name);
+        self.program_len = p.len;
+
+        self.pgd = self.allocator.create(mm.map.PageTable) catch {
+            @panic("Out of Memory! No buffer for thread page table.");
+        };
+        self.pgd.* = @splat(@bitCast(@as(u64, 0)));
 
         asm volatile (
             \\ mov sp, %[arg0]
@@ -182,33 +191,31 @@ pub fn kill(pid: u32) void {
 
 fn preparePageTableForUser(
     pgd: *mm.map.PageTable,
-    program: ?[]const u8,
     user_stack: []u8,
 ) void {
+    const self: *ThreadContext = threadFromCurrent();
     const va = 0;
     const v_stack_start = 0xffffffffb000;
     const v_stack_end = 0xfffffffff000;
 
-    if (program) |prog| {
-        mm.map.mapPages(
-            pgd,
-            va,
-            std.mem.alignForwardLog2(prog.len, 12),
-            @intFromPtr(prog.ptr),
-            .{
-                .user = true,
-                .read_only = false,
-                .el0_exec = true,
-                .el1_exec = false,
-                .mair_index = 1,
-            },
-            .PTE,
-        ) catch {
-            @panic("Cannot map user program memory!");
-        };
-    } else {
-        @panic("Program must be provided to map user program memory!");
-    }
+    mm.map.mapPages(
+        pgd,
+        va,
+        std.mem.alignForwardLog2(self.program_len.?, 12),
+        0,
+        .{
+            .access = false,
+            .user = true,
+            .read_only = false,
+            .el0_exec = true,
+            .el1_exec = false,
+            .mair_index = 1,
+            .policy = .program,
+        },
+        .PTE,
+    ) catch {
+        @panic("Cannot map user program memory!");
+    };
 
     mm.map.mapPages(
         pgd,
@@ -216,11 +223,13 @@ fn preparePageTableForUser(
         v_stack_end - v_stack_start,
         @intFromPtr(user_stack.ptr),
         .{
+            .access = false,
             .user = true,
             .read_only = false,
             .el0_exec = false,
             .el1_exec = false,
             .mair_index = 1,
+            .policy = .anonymous,
         },
         .PTE,
     ) catch {
@@ -233,11 +242,13 @@ fn preparePageTableForUser(
         0x4000000,
         0xFFFF00003C000000,
         .{
+            .access = false,
             .user = true,
             .read_only = false,
             .el0_exec = false,
             .el1_exec = false,
             .mair_index = 0,
+            .policy = .direct,
         },
         .PMD,
     ) catch {
@@ -249,11 +260,13 @@ fn preparePageTableForUser(
         0x1000,
         @intFromPtr(&handlers.userSigreturnStub) & ~@as(u64, 0xfff),
         .{
+            .access = false,
             .user = true,
             .read_only = true,
             .el0_exec = true,
             .el1_exec = false,
             .mair_index = 1,
+            .policy = .direct,
         },
         .PTE,
     ) catch |err| {

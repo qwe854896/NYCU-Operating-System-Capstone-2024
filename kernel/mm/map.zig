@@ -1,6 +1,10 @@
 const std = @import("std");
 const types = @import("types.zig");
 const main = @import("../main.zig");
+const thread = @import("../thread.zig");
+const registers = @import("../arch/aarch64/registers.zig");
+const initrd = @import("../fs/initrd.zig");
+const log = std.log.scoped(.map);
 
 const PageTableEntry = types.PageTableEntry;
 pub const PageTable = types.PageTable;
@@ -75,7 +79,7 @@ pub fn mapPages(
     va: u64,
     size: usize,
     pa: u64,
-    flags: struct { user: bool, read_only: bool, el0_exec: bool, el1_exec: bool, mair_index: u3 },
+    flags: struct { access: bool, user: bool, read_only: bool, el0_exec: bool, el1_exec: bool, mair_index: u3, policy: types.PageFaultPolicy },
     comptime granularity: Granularity,
 ) !void {
     const block_size: usize = switch (granularity) {
@@ -102,10 +106,11 @@ pub fn mapPages(
             .mair_index = flags.mair_index,
             .user_access = flags.user,
             .read_only = flags.read_only,
-            .access = true,
+            .access = flags.access,
             .phys_addr = @truncate(current_pa >> 12),
             .privileged_non_executable = !flags.el1_exec,
             .unprivileged_non_executable = !flags.el0_exec,
+            .policy = flags.policy,
         };
 
         current_va += block_size;
@@ -113,10 +118,10 @@ pub fn mapPages(
     }
 }
 
-pub fn virtToPhys(
+fn virtToEntry(
     page_table: *PageTable,
     va: u64,
-) Error!u64 {
+) Error!struct { *PageTableEntry, Granularity } {
     // Try different granularities from largest to smallest
     const entries = inline for (.{ Granularity.PUD, Granularity.PMD, Granularity.PTE }) |granularity| {
         do: {
@@ -126,20 +131,63 @@ pub fn virtToPhys(
 
             if (entry.valid) {
                 if (!entry.not_block or granularity == .PTE) {
-                    const block_size: usize = switch (granularity) {
-                        .PTE => 4096,
-                        .PMD => 2 * 1024 * 1024,
-                        .PUD => 1 * 1024 * 1024 * 1024,
-                    };
-                    const mask = block_size - 1;
-
-                    const phys_base = @as(u64, entry.phys_addr) << 12;
-
-                    return 0xffff000000000000 | phys_base | (va & mask);
+                    return .{ entry, granularity };
                 }
             }
         }
     } else return Error.NoEntry;
 
     return entries;
+}
+
+pub fn virtToPhys(
+    page_table: *PageTable,
+    va: u64,
+) Error!u64 {
+    const entry = try virtToEntry(page_table, va);
+    const block_size: usize = switch (entry.@"1") {
+        .PTE => 4096,
+        .PMD => 2 * 1024 * 1024,
+        .PUD => 1 * 1024 * 1024 * 1024,
+    };
+    const mask = block_size - 1;
+    const phys_base = @as(u64, entry.@"0".phys_addr) << 12;
+    return 0xffff000000000000 | phys_base | (va & mask);
+}
+
+pub fn pageHandler() void {
+    const self = thread.threadFromCurrent();
+    const fault_address = registers.getFarEl1();
+    const entry_with_granularity = virtToEntry(self.pgd, fault_address) catch {
+        log.err("[Segmentation fault]: 0x{X} -> Kill Process", .{fault_address});
+        thread.end();
+    };
+    log.err("[Translation fault]: 0x{X}", .{fault_address});
+
+    const entry = entry_with_granularity.@"0";
+    const block_size: usize = switch (entry_with_granularity.@"1") {
+        .PTE => 4096,
+        .PMD => 2 * 1024 * 1024,
+        .PUD => 1 * 1024 * 1024 * 1024,
+    };
+
+    entry.access = true;
+    switch (entry.policy) {
+        .anonymous => {
+            const new_page_frame = getSingletonPageAllocator().alloc(u8, block_size) catch {
+                @panic("Cannot allocate new page frame for program!");
+            };
+            entry.phys_addr = @truncate(@intFromPtr(new_page_frame.ptr) >> 12);
+        },
+        .program => {
+            const program = initrd.getFileContent(self.program_name.?).?;
+            const new_program = getSingletonPageAllocator().alloc(u8, block_size) catch {
+                @panic("Cannot allocate new page frame for program!");
+            };
+            const offset = entry.phys_addr << 12;
+            @memcpy(new_program, program[offset .. offset + block_size]);
+            entry.phys_addr = @truncate(@intFromPtr(new_program.ptr) >> 12);
+        },
+        .direct => {},
+    }
 }

@@ -111,11 +111,13 @@ export fn main(dtb_address: usize) void {
         arm_memory.@"1",
         arm_memory.@"0",
         .{
+            .access = true,
             .user = false,
             .read_only = false,
             .el0_exec = false,
             .el1_exec = true,
             .mair_index = 1,
+            .policy = .direct,
         },
         .PMD,
     ) catch {
@@ -127,11 +129,13 @@ export fn main(dtb_address: usize) void {
         0x40000000 - arm_memory.@"1",
         arm_memory.@"0" + arm_memory.@"1",
         .{
+            .access = true,
             .user = false,
             .read_only = false,
             .el0_exec = false,
             .el1_exec = false,
             .mair_index = 0,
+            .policy = .direct,
         },
         .PMD,
     ) catch {
@@ -143,11 +147,13 @@ export fn main(dtb_address: usize) void {
         0x40000000,
         0x40000000,
         .{
+            .access = true,
             .user = false,
             .read_only = false,
             .el0_exec = false,
             .el1_exec = false,
             .mair_index = 0,
+            .policy = .direct,
         },
         .PUD,
     ) catch {

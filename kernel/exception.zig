@@ -4,6 +4,7 @@ const processor = @import("arch/aarch64/processor.zig");
 const registers = @import("arch/aarch64/registers.zig");
 const dispatcher = @import("process/syscall/dispatcher.zig");
 const thread = @import("thread.zig");
+const mm = @import("mm.zig");
 const log = std.log.scoped(.exception);
 
 const TrapFrame = processor.TrapFrame;
@@ -41,18 +42,22 @@ export fn syscallEntry(sp: usize) void {
     var self: *ThreadContext = thread.threadFromCurrent();
     self.trap_frame = trap_frame;
 
-    if ((registers.getEsrEl1() >> 26) != 0b010101) {
-        log.info("Exception occurred! tid: {}", .{self.id});
-        log.info("Exception:", .{});
-        log.info("  SPSR_EL1: 0b{b:0>32}", .{trap_frame.spsr_el1});
-        log.info("  ELR_EL1: 0x{X}", .{trap_frame.elr_el1});
-        log.info("  ESR_EL1: 0b{b:0>32}", .{registers.getEsrEl1()});
-        while (true) {
-            asm volatile ("nop");
-        }
+    switch (registers.getEsrEl1() >> 26) {
+        0b010101 => dispatcher.dispatch(trap_frame),
+        0b100000 => mm.map.pageHandler(),
+        0b100100 => mm.map.pageHandler(),
+        else => {
+            log.info("Exception occurred! tid: {}", .{self.id});
+            log.info("Exception:", .{});
+            log.info("  SPSR_EL1: 0b{b:0>32}", .{trap_frame.spsr_el1});
+            log.info("  ELR_EL1: 0x{X}", .{trap_frame.elr_el1});
+            log.info("  ESR_EL1: 0b{b:0>32}", .{registers.getEsrEl1()});
+            log.info("  FAR_EL1: 0x{X}", .{registers.getFarEl1()});
+            while (true) {
+                asm volatile ("nop");
+            }
+        },
     }
-
-    dispatcher.dispatch(trap_frame);
 }
 
 // Avoid using x0 as it stores the address of dtb
