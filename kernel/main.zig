@@ -108,7 +108,7 @@ export fn main(dtb_address: usize) void {
     };
     kernel_pgd.* = @splat(.{});
 
-    mm.map.mapPages(
+    _ = mm.map.mapPages(
         kernel_pgd,
         arm_memory.@"0",
         arm_memory.@"1",
@@ -126,7 +126,7 @@ export fn main(dtb_address: usize) void {
     ) catch {
         @panic("Cannot map kernel memory!");
     };
-    mm.map.mapPages(
+    _ = mm.map.mapPages(
         kernel_pgd,
         arm_memory.@"0" + arm_memory.@"1",
         0x40000000 - arm_memory.@"1",
@@ -144,7 +144,7 @@ export fn main(dtb_address: usize) void {
     ) catch {
         @panic("Cannot map kernel memory!");
     };
-    mm.map.mapPages(
+    _ = mm.map.mapPages(
         kernel_pgd,
         0x40000000,
         0x40000000,

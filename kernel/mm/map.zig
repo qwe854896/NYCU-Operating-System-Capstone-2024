@@ -36,7 +36,9 @@ pub fn initPageTableCache(allocator: std.mem.Allocator) void {
 }
 
 fn createPageTable() Error!*PageTable {
-    return page_table_cache.create();
+    const new_table = try page_table_cache.create();
+    new_table.* = @splat(.{});
+    return new_table;
 }
 
 fn destroyPageTable(table: *PageTable) void {
@@ -113,10 +115,9 @@ fn walk(
 
             if (!entry.allocated) {
                 if (!alloc) {
-                    return result;
+                    return Error.NoEntry;
                 }
                 const new_table = try createPageTable();
-                new_table.* = @splat(.{});
                 entry.* = .{
                     .valid = true,
                     .allocated = true,
@@ -136,7 +137,13 @@ fn walk(
         }
     }
 
-    result.entries[result.depth] = &current[getLevelIndex(va, current_info.shift)];
+    const entry = &current[getLevelIndex(va, current_info.shift)];
+    if (!entry.allocated) {
+        if (!alloc) {
+            return Error.NoEntry;
+        }
+    }
+    result.entries[result.depth] = entry;
     return result;
 }
 
@@ -147,24 +154,47 @@ pub fn mapPages(
     pa: u64,
     flags: struct { valid: bool, user: bool, read_only: bool, el0_exec: bool, el1_exec: bool, mair_index: u3, policy: types.PageFaultPolicy },
     comptime granularity: Granularity,
-) !void {
+) !u64 {
     const info = comptime GranularityInfo.init(granularity);
 
     if ((va | pa | size) & (info.block_size - 1) != 0)
         return error.Unaligned;
 
-    var current_va = va;
+    var va_hint = va;
+
+    while (true) {
+        var current_va = va_hint;
+        var current_pa = pa;
+
+        while (current_va < va_hint + size) {
+            const result = try walk(page_table, current_va, true, granularity);
+            const entry = result.entries[result.depth].?;
+
+            if (entry.allocated) {
+                break;
+            }
+
+            current_va += info.block_size;
+            current_pa += info.block_size;
+        }
+
+        if (current_va != va_hint + size) {
+            log.info("Page table entry already allocated, trying again: 0x{X} -> 0x{X}", .{ va_hint, va_hint + size });
+            va_hint = va_hint + size;
+            continue;
+        }
+        break;
+    }
+
+    var current_va = va_hint;
     var current_pa = pa;
 
-    while (current_va < va + size) {
+    while (current_va < va_hint + size) {
         const result = try walk(page_table, current_va, true, granularity);
         const entry = result.entries[result.depth].?;
 
-        // if (entry.valid)
-        //     return error.AlreadyMapped;
-
         entry.* = .{
-            .valid = flags.valid,
+            .valid = false,
             .allocated = true,
             .not_block = (granularity == .PTE),
             .mair_index = flags.mair_index,
@@ -178,9 +208,15 @@ pub fn mapPages(
             .policy = flags.policy,
         };
 
+        if (flags.valid) {
+            handleTranslationFault(entry, info, current_va, true);
+        }
+
         current_va += info.block_size;
         current_pa += info.block_size;
     }
+
+    return va_hint;
 }
 
 fn virtToEntry(
@@ -206,9 +242,6 @@ pub fn virtToPhys(
     va: u64,
 ) Error!u64 {
     const result = try virtToEntry(page_table, va);
-    if (result.depth == 0) {
-        return error.NoEntry;
-    }
     const entry = result.entries[result.depth].?;
     switch (result.depth) {
         else => unreachable,
@@ -223,8 +256,10 @@ fn handleSegmentationFault(fault_address: u64) noreturn {
     thread.end();
 }
 
-fn handleTranslationFault(entry: *PageTableEntry, info: GranularityInfo, self: *thread.ThreadContext, fault_address: u64) void {
-    log.err("[Translation fault]: 0x{X}", .{fault_address});
+fn handleTranslationFault(entry: *PageTableEntry, info: GranularityInfo, fault_address: u64, comptime prefault: bool) void {
+    if (!prefault) {
+        log.err("[Translation fault]: 0x{X}", .{fault_address});
+    }
     entry.valid = true;
     switch (entry.policy) {
         .anonymous => {
@@ -236,6 +271,7 @@ fn handleTranslationFault(entry: *PageTableEntry, info: GranularityInfo, self: *
             context.invalidateCache();
         },
         .program => {
+            const self = thread.threadFromCurrent();
             const program = initrd.getFileContent(self.program_name.?).?;
             const new_program = getSingletonPageAllocator().alloc(u8, info.block_size) catch {
                 @panic("Cannot allocate new page frame for program!");
@@ -285,11 +321,8 @@ pub fn pageHandler() void {
     const fault_address = registers.getFarEl1();
 
     const result = virtToEntry(self.pgd.?, fault_address) catch {
-        @panic("Cannot get page table entry!");
-    };
-    if (result.depth == 0) {
         handleSegmentationFault(fault_address);
-    }
+    };
     const entry = result.entries[result.depth].?;
     const info = GranularityInfo.init(switch (result.depth) {
         else => unreachable,
@@ -305,7 +338,7 @@ pub fn pageHandler() void {
     const fault_type = status_code >> 2 & 0xf;
 
     switch (fault_type) {
-        0b0001 => handleTranslationFault(entry, info, self, fault_address),
+        0b0001 => handleTranslationFault(entry, info, fault_address, false),
         0b0011 => handleCopyOnWriteFault(entry, info, fault_address),
         else => {
             @panic("Unhandled page fault!");

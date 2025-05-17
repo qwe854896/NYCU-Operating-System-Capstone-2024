@@ -203,7 +203,7 @@ fn preparePageTableForUser(
     const v_stack_start = 0xffffffffb000;
     const v_stack_end = 0xfffffffff000;
 
-    mm.map.mapPages(
+    _ = mm.map.mapPages(
         pgd,
         va,
         std.mem.alignForwardLog2(self.program_len.?, 12),
@@ -222,7 +222,7 @@ fn preparePageTableForUser(
         @panic("Cannot map user program memory!");
     };
 
-    mm.map.mapPages(
+    _ = mm.map.mapPages(
         pgd,
         v_stack_start,
         v_stack_end - v_stack_start,
@@ -241,7 +241,7 @@ fn preparePageTableForUser(
         @panic("Cannot map user stack memory!");
     };
 
-    mm.map.mapPages(
+    _ = mm.map.mapPages(
         pgd,
         0x3C000000,
         0x4000000,
@@ -259,7 +259,7 @@ fn preparePageTableForUser(
     ) catch {
         @panic("Cannot map device memory for user!");
     };
-    mm.map.mapPages(
+    _ = mm.map.mapPages(
         pgd,
         0xfffffffff000,
         0x1000,

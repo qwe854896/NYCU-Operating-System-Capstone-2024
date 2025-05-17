@@ -129,3 +129,47 @@ pub fn sysSigreturn(trap_frame: *TrapFrame) void {
     const sp_el0: usize = trap_frame.sp_el0;
     trap_frame.* = @as(*TrapFrame, @ptrFromInt(sp_el0)).*;
 }
+
+pub fn sysMmap(trap_frame: *TrapFrame) void {
+    const MAP_ANONYMOUS = 0x20;
+    const MAP_POPULATE = 0x8000;
+    const PROT_READ = 0b001;
+    const PROT_WRITE = 0b010;
+    const PROT_EXEC = 0b100;
+
+    const self: *ThreadContext = thread.threadFromCurrent();
+    const addr: usize = @intCast(trap_frame.x0);
+    const len: usize = @intCast(trap_frame.x1);
+    const prot: i32 = @intCast(trap_frame.x2);
+    const flags: i32 = @intCast(trap_frame.x3);
+    const fd: i32 = @intCast(trap_frame.x4);
+    const file_offset: i32 = @intCast(trap_frame.x5);
+    _ = fd;
+    _ = file_offset;
+
+    const valid = (flags & MAP_POPULATE) != 0 and (flags & MAP_ANONYMOUS) != 0;
+    const read_only = (prot & PROT_WRITE) == 0;
+    const exec = (prot & PROT_EXEC) != 0;
+
+    if ((prot & PROT_READ) == 0) {
+        trap_frame.x0 = std.mem.alignForwardLog2(addr, 12);
+        return;
+    }
+
+    trap_frame.x0 = mm.map.mapPages(
+        self.pgd.?,
+        std.mem.alignForwardLog2(addr, 12),
+        std.mem.alignForwardLog2(len, 12),
+        0,
+        .{
+            .valid = valid,
+            .user = true,
+            .read_only = read_only,
+            .el0_exec = exec,
+            .el1_exec = false,
+            .mair_index = 1,
+            .policy = if ((flags & MAP_ANONYMOUS) != 0) .anonymous else .program,
+        },
+        .PTE,
+    ) catch @bitCast(@as(i64, -1));
+}
