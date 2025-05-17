@@ -114,7 +114,7 @@ pub fn PageAllocator(comptime config: Config) type {
         }
 
         fn allocSize(self: *const Self, ptr: [*]u8) usize {
-            const offset = @intFromPtr(ptr) - @intFromPtr(self.bytes.ptr);
+            const offset = (@intFromPtr(ptr) - @intFromPtr(self.bytes.ptr)) >> log2_page_size;
             const index = self.manager.backward(offset);
             const size = self.manager.indexToSize(index);
             return size;
