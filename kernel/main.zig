@@ -113,7 +113,7 @@ export fn main(dtb_address: usize) void {
         arm_memory.@"1",
         arm_memory.@"0",
         .{
-            .access = true,
+            .valid = true,
             .user = false,
             .read_only = false,
             .el0_exec = false,
@@ -131,7 +131,7 @@ export fn main(dtb_address: usize) void {
         0x40000000 - arm_memory.@"1",
         arm_memory.@"0" + arm_memory.@"1",
         .{
-            .access = true,
+            .valid = true,
             .user = false,
             .read_only = false,
             .el0_exec = false,
@@ -149,7 +149,7 @@ export fn main(dtb_address: usize) void {
         0x40000000,
         0x40000000,
         .{
-            .access = true,
+            .valid = true,
             .user = false,
             .read_only = false,
             .el0_exec = false,

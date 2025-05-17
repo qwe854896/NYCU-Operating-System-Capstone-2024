@@ -63,7 +63,7 @@ fn walk(
         const index = getLevelIndex(va, shift);
         const entry = &current[index];
 
-        if (entry.valid) {
+        if (entry.allocated) {
             if (entry.not_block)
                 current = @ptrFromInt(@as(u64, entry.phys_addr << 12) | 0xffff000000000000);
         } else if (alloc) {
@@ -71,6 +71,7 @@ fn walk(
             new_table.* = @splat(@bitCast(@as(u64, 0)));
             entry.* = .{
                 .valid = true,
+                .allocated = true,
                 .not_block = true,
                 .phys_addr = @truncate(@intFromPtr(new_table.ptr) >> 12),
             };
@@ -105,7 +106,7 @@ pub fn mapPages(
     va: u64,
     size: usize,
     pa: u64,
-    flags: struct { access: bool, user: bool, read_only: bool, el0_exec: bool, el1_exec: bool, mair_index: u3, policy: types.PageFaultPolicy },
+    flags: struct { valid: bool, user: bool, read_only: bool, el0_exec: bool, el1_exec: bool, mair_index: u3, policy: types.PageFaultPolicy },
     comptime granularity: Granularity,
 ) !void {
     const block_size: usize = switch (granularity) {
@@ -134,13 +135,14 @@ pub fn mapPages(
         //     return error.AlreadyMapped;
 
         entry.* = .{
-            .valid = true,
+            .valid = flags.valid,
+            .allocated = true,
             .not_block = (granularity == .PTE),
             .mair_index = flags.mair_index,
             .user_access = flags.user,
             .read_only = flags.read_only,
             .original_read_only = flags.read_only,
-            .access = flags.access,
+            .access = true,
             .phys_addr = @truncate(current_pa >> 12),
             .privileged_non_executable = !flags.el1_exec,
             .unprivileged_non_executable = !flags.el0_exec,
@@ -217,22 +219,21 @@ pub fn pageHandler() void {
         unreachable;
 
     // Data Fault Status Code.
-    // 0b001011: Access flag fault, level 3.
+    // 0b000111: Translation fault, level 3.
     // 0b001111: Permission fault, level 3.
     const status_code = registers.getEsrEl1() & 0x3f;
     const fault_type = status_code >> 2 & 0xf;
 
     switch (fault_type) {
-        0b0010 => {
+        0b0001 => {
             log.err("[Translation fault]: 0x{X}", .{fault_address});
-            entry.access = true;
+            entry.valid = true;
             switch (entry.policy) {
                 .anonymous => {
                     const new_page_frame = getSingletonPageAllocator().alloc(u8, block_size) catch {
                         @panic("Cannot allocate new page frame for program!");
                     };
                     entry.phys_addr = @truncate(@intFromPtr(new_page_frame.ptr) >> 12);
-
                     context.invalidateCache();
                 },
                 .program => {
@@ -244,7 +245,6 @@ pub fn pageHandler() void {
                     const copy_len = @min(offset + block_size, program.len) - offset;
                     @memcpy(new_program[0..copy_len], program[offset .. offset + copy_len]);
                     entry.phys_addr = @truncate(@intFromPtr(new_program.ptr) >> 12);
-
                     context.invalidateCache();
                 },
                 .direct => {},
@@ -278,7 +278,7 @@ pub fn pageHandler() void {
 pub fn deepCopy(page_table: *PageTable, comptime granularity: Granularity) PageTable {
     var new_page_table: PageTable = undefined;
     for (page_table, 0..) |*entry, i| {
-        if (entry.valid) {
+        if (entry.allocated) {
             new_page_table[i] = entry.*;
             if (entry.not_block and granularity != .PTE) {
                 const new_next_table = allocateTable() catch {

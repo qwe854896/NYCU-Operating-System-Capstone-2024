@@ -199,7 +199,7 @@ fn preparePageTableForUser(
         std.mem.alignForwardLog2(self.program_len.?, 12),
         0,
         .{
-            .access = false,
+            .valid = false,
             .user = true,
             .read_only = false,
             .el0_exec = true,
@@ -218,7 +218,7 @@ fn preparePageTableForUser(
         v_stack_end - v_stack_start,
         0,
         .{
-            .access = false,
+            .valid = false,
             .user = true,
             .read_only = false,
             .el0_exec = false,
@@ -237,7 +237,7 @@ fn preparePageTableForUser(
         0x4000000,
         0xFFFF00003C000000,
         .{
-            .access = false,
+            .valid = false,
             .user = true,
             .read_only = false,
             .el0_exec = false,
@@ -255,7 +255,7 @@ fn preparePageTableForUser(
         0x1000,
         @intFromPtr(&handlers.userSigreturnStub) & ~@as(u64, 0xfff),
         .{
-            .access = false,
+            .valid = false,
             .user = true,
             .read_only = true,
             .el0_exec = true,

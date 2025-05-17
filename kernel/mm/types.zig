@@ -20,7 +20,7 @@ pub const PageTableEntry = packed struct(u64) {
     unprivileged_non_executable: bool = false, // non-executable page frame for EL0 if set.
     policy: PageFaultPolicy = .anonymous,
     original_read_only: bool = false,
-    _reserved58: u1 = 0,
+    allocated: bool = false,
     _unused59: u5 = 0,
 };
 
