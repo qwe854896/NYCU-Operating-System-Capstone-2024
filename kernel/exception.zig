@@ -45,7 +45,9 @@ export fn syscallEntry(sp: usize) void {
     switch (registers.getEsrEl1() >> 26) {
         0b010101 => dispatcher.dispatch(trap_frame),
         0b100000 => mm.map.pageHandler(),
+        0b100001 => mm.map.pageHandler(),
         0b100100 => mm.map.pageHandler(),
+        0b100101 => mm.map.pageHandler(),
         else => {
             log.info("Exception occurred! tid: {}", .{self.id});
             log.info("Exception:", .{});
@@ -109,7 +111,7 @@ comptime {
         \\      b exception_handler
         \\      .align 7
         \\
-        \\      b exception_handler
+        \\      b syscall_handler
         \\      .align 7
         \\      b exception_handler
         \\      .align 7

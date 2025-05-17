@@ -130,8 +130,9 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
     // Handle Parent TrapFrame
     parent_trap_frame.x0 = t.id;
 
-    preparePageTableForUser(t.pgd);
+    t.pgd.* = mm.map.deepCopy(self.pgd, .PGD);
 
+    context.switchTtbr0(@intFromPtr(self.pgd));
     context.switchTo(context.getCurrent(), context.getCurrent());
 
     const new_self: *volatile ThreadContext = threadFromCurrent();

@@ -1,6 +1,14 @@
 pub extern fn switchTo(usize, usize) void;
 pub extern fn getCurrent() usize;
 
+pub fn invalidateCache() void {
+    asm volatile (
+        \\ tlbi vmalle1is     // Invalidate all TLB entries
+        \\ dsb ish            // Ensure TLB invalidation
+        \\ isb                // Synchronize pipeline
+    );
+}
+
 pub fn switchTtbr0(next_pgd: usize) void {
     var current_ttbr0: usize = 0;
     asm volatile ("mrs %[cur], ttbr0_el1"
@@ -11,13 +19,11 @@ pub fn switchTtbr0(next_pgd: usize) void {
             \\ mov x0, %[arg0]
             \\ dsb ish            // Ensure write completion
             \\ msr ttbr0_el1, x0  // Update translation table
-            \\ tlbi vmalle1is     // Invalidate all TLB entries
-            \\ dsb ish            // Ensure TLB invalidation
-            \\ isb                // Synchronize pipeline
             :
             : [arg0] "r" (next_pgd),
             : "x0"
         );
+        invalidateCache();
     }
 }
 

@@ -100,6 +100,8 @@ export fn main(dtb_address: usize) void {
     page_allocator = fa.allocator();
     allocator = da.allocator();
 
+    mm.map.initPageTableCache(page_allocator);
+
     const kernel_pgd = page_allocator.create(mm.map.PageTable) catch {
         @panic("Cannot create kernel page table!");
     };
