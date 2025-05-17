@@ -91,7 +91,7 @@ export fn main(dtb_address: usize) void {
     };
 
     fa.memory_reserve(0x0000, 0x1000); // spin tables
-    fa.memory_reserve(0x1000, 0x3000); // Initial PGD and PUD
+    fa.memory_reserve(0x1000, 0x4000); // Initial PGD, PUD, and PMD
     fa.memory_reserve(@intFromPtr(&_flash_img_start) - kernel_identity_offset, @intFromPtr(&_flash_img_end) - kernel_identity_offset);
     fa.memory_reserve(initrd_start_ptr, initrd_end_ptr);
     fa.memory_reserve(dtb_address, dtb_address + dtb_size);
@@ -103,77 +103,15 @@ export fn main(dtb_address: usize) void {
     mm.map.initPageTableCache(page_allocator);
     mm.map.initPageFrameRefCounts(allocator);
 
-    const kernel_pgd = page_allocator.create(mm.map.PageTable) catch {
-        @panic("Cannot create kernel page table!");
-    };
-    kernel_pgd.* = @splat(.{});
-
-    _ = mm.map.mapPages(
-        kernel_pgd,
-        arm_memory.@"0",
-        arm_memory.@"1",
-        arm_memory.@"0",
-        .{
-            .valid = true,
-            .user = false,
-            .read_only = false,
-            .el0_exec = false,
-            .el1_exec = true,
-            .mair_index = 1,
-            .policy = .direct,
-        },
-        .PMD,
-    ) catch {
-        @panic("Cannot map kernel memory!");
-    };
-    _ = mm.map.mapPages(
-        kernel_pgd,
-        arm_memory.@"0" + arm_memory.@"1",
-        0x40000000 - arm_memory.@"1",
-        arm_memory.@"0" + arm_memory.@"1",
-        .{
-            .valid = true,
-            .user = false,
-            .read_only = false,
-            .el0_exec = false,
-            .el1_exec = false,
-            .mair_index = 0,
-            .policy = .direct,
-        },
-        .PMD,
-    ) catch {
-        @panic("Cannot map kernel memory!");
-    };
-    _ = mm.map.mapPages(
-        kernel_pgd,
-        0x40000000,
-        0x40000000,
-        0x40000000,
-        .{
-            .valid = true,
-            .user = false,
-            .read_only = false,
-            .el0_exec = false,
-            .el1_exec = false,
-            .mair_index = 0,
-            .policy = .direct,
-        },
-        .PUD,
-    ) catch {
-        @panic("Cannot map kernel memory!");
-    };
-
     const invalid_pgd = page_allocator.create(mm.map.PageTable) catch {
         @panic("Cannot create kernel page table!");
     };
     invalid_pgd.* = @splat(.{});
 
     asm volatile (
-        \\ msr ttbr1_el1, %[arg0]
-        \\ msr ttbr0_el1, %[arg1]
+        \\ msr ttbr0_el1, %[arg0]
         :
-        : [arg0] "r" (@intFromPtr(kernel_pgd)),
-          [arg1] "r" (@intFromPtr(invalid_pgd)),
+        : [arg0] "r" (@intFromPtr(invalid_pgd)),
     );
 
     initrd.init(allocator);

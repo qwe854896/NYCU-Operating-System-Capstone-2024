@@ -64,54 +64,70 @@ const pd_block = 0b01; // Level 1/2 block entry (directly maps memory)
 /// Access flag (bit 10) - indicates entry has been accessed
 const pd_access = (1 << 10);
 
-/// Boot Page Global Directory (PGD) attribute:
-/// - Table descriptor type (points to PUD)
-const boot_pgd_attr = pd_table;
+/// Special constants for table entries
+const pgd_entry_0 = 0x0000000000002003; // PGD[0] value
+const pud_entry_0 = 0x0000000000003003; // PUD[0] value
+const pud_entry_1 = 0x0060000040000401; // PUD[1] value
+const pmd_base1 = 0x0040000000000405; // PMD base pattern 1
+const pmd_base2 = 0x006000003c000401; // PMD base pattern 2
 
-/// Boot Page Upper Directory (PUD) attribute:
-/// - Block descriptor type
-/// - Access flag enabled
-/// - Memory type index 0 (Device-nGnRnE)
-const boot_pud_attr = pd_access | (mair_idx_device_ngnrne << 2) | pd_block;
-
-/// Initialize MMU and set up initial identity mapping
-/// Creates 2x1GB mappings for physical memory:
-/// 1. 0x00000000-0x3FFFFFFF (first 1GB)
-/// 2. 0x40000000-0x7FFFFFFF (second 1GB)
 pub fn enableMMU() callconv(.Naked) void {
     asm volatile (
     // Initialize page table bases
-        \\ mov x1, 0x1000       // PGD at physical address 0x0
-        \\ mov x2, 0x2000  // PUD at physical address 0x1000
+        \\ mov x1, 0x1000       // PGD at 0x1000
+        \\ mov x2, 0x2000       // PUD at 0x2000
+        \\ mov x5, 0x3000       // PMD at 0x3000
 
-        // Link PGD[0] -> PUD (0x1000 | attributes)
-        \\ mov x3, %[pgd_attr]
-        \\ orr x3, x2, x3  // Combine PUD address with table attributes
-        \\ str x3, [x1]    // Store entry in PGD[0]
+        // Set up PGD[0]
+        \\ mov x3, %[pgd_entry_0]
+        \\ str x3, [x1]
 
-        // Create PUD entries (1GB block mappings)
-        \\ mov x3, %[pud_attr]  // Load PUD entry template
-        // First 1GB mapping (0x00000000)
-        \\ mov x4, 0x00000000
-        \\ orr x4, x3, x4  // Combine base address with attributes
-        \\ str x4, [x2]    // Store in PUD[0]
-        // Second 1GB mapping (0x40000000)
-        \\ mov x4, 0x40000000
-        \\ orr x4, x3, x4  // Combine base address with attributes
-        \\ str x4, [x2, 8] // Store in PUD[1] (offset 8 bytes)
+        // Set up PUD entries
+        \\ mov x3, %[pud_entry_0]
+        \\ str x3, [x2]         // PUD[0]
+        \\ mov x3, %[pud_entry_1]
+        \\ str x3, [x2, #8]     // PUD[1]
+
+        // Initialize PMD entries (0-479)
+        \\ mov x6, #0            // i = 0
+        \\ mov x7, %[pmd_base1]  // Load base pattern
+        \\ mov x8, #480          // Loop limit
+        \\ 1:
+        \\ lsl x9, x6, #21       // i * 0x200000
+        \\ add x10, x7, x9       // Create entry value
+        \\ str x10, [x5, x6, lsl #3]  // Store at PMD[i]
+        \\ add x6, x6, #1        // i++
+        \\ cmp x6, x8
+        \\ b.lt 1b
+
+        // Initialize PMD entries (480-511)
+        \\ mov x6, #0            // Reset counter
+        \\ mov x7, %[pmd_base2]  // Load second base pattern
+        \\ mov x8, #32           // 32 entries
+        \\ 2:
+        \\ lsl x9, x6, #21       // i * 0x200000
+        \\ add x10, x7, x9       // Create entry value
+        \\ add x11, x5, #3840    // 480*8 = 3840
+        \\ str x10, [x11, x6, lsl #3]  // Store at PMD[480+i]
+        \\ add x6, x6, #1        // i++
+        \\ cmp x6, x8
+        \\ b.lt 2b
 
         // Activate translation tables
-        \\ msr ttbr0_el1, x1  // Set TTBR0 to PGD base
-        \\ msr ttbr1_el1, x1  // Also load PGD to the upper translation based register.
+        \\ msr ttbr0_el1, x1     // Set TTBR0 to PGD
+        \\ msr ttbr1_el1, x1     // Set TTBR1 to PGD
 
-        // Enable MMU (SCTLR_EL1.M = 1)
+        // Enable MMU
         \\ mrs x3, sctlr_el1
-        \\ orr x3, x3, 1      // Set bit 0 (MMU enable)
+        \\ orr x3, x3, #1        // Set MMU enable bit
         \\ msr sctlr_el1, x3
         \\ ret
         :
-        : [pgd_attr] "r" (boot_pgd_attr),
-          [pud_attr] "r" (boot_pud_attr),
-        : "x1", "x2", "x3", "x4", "memory"
+        : [pgd_entry_0] "r" (pgd_entry_0),
+          [pud_entry_0] "r" (pud_entry_0),
+          [pud_entry_1] "r" (pud_entry_1),
+          [pmd_base1] "r" (pmd_base1),
+          [pmd_base2] "r" (pmd_base2),
+        : "x1", "x2", "x3", "x5", "x6", "x7", "x8", "x9", "x10", "x11", "memory"
     );
 }

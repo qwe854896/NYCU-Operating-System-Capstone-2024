@@ -43,7 +43,7 @@ pub fn build(b: *Build) !void {
 fn setupAArch64Target(b: *Build) ResolvedTarget {
     const query = Target.Query.parse(.{
         .arch_os_abi = "aarch64-freestanding-eabi",
-        .cpu_features = "cortex_a53+strict_align",
+        .cpu_features = "cortex_a53",
     }) catch @panic("Invalid target query");
 
     return b.resolveTargetQuery(query);
