@@ -32,8 +32,8 @@ pub const ThreadContext = struct {
     entry: usize,
 
     kernel_stack: []u8,
-    pgd: *mm.map.PageTable,
 
+    pgd: ?*mm.map.PageTable = null,
     program_name: ?[]u8 = null,
     program_len: ?usize = null,
     trap_frame: ?*processor.TrapFrame = null,
@@ -52,23 +52,21 @@ pub const ThreadContext = struct {
             .kernel_stack = allocator.alignedAlloc(u8, 16, 0x8000) catch {
                 @panic("Out of Memory! No buffer for thread kernel stack.");
             },
-            .pgd = allocator.create(mm.map.PageTable) catch {
-                @panic("Out of Memory! No buffer for thread page table.");
-            },
             .allocator = allocator,
             .cpu_context = .{
                 .pc = @intFromPtr(&startKernel),
             },
         };
-        self.pgd.* = @splat(.{});
         self.cpu_context.sp = @as(usize, @intFromPtr(self.kernel_stack.ptr)) + self.kernel_stack.len;
         return self;
     }
 
     pub fn deinit(self: *Self) void {
         self.allocator.free(self.kernel_stack);
-        mm.map.deepDestroy(self.pgd, 3);
-        self.allocator.destroy(self.pgd);
+        if (self.pgd) |pgd| {
+            mm.map.deepDestroy(pgd, 3);
+            self.allocator.destroy(pgd);
+        }
         if (self.program_name) |pn| {
             self.allocator.free(pn);
         }
@@ -84,8 +82,9 @@ fn startUser() void {
     const self: *ThreadContext = threadFromCurrent();
     const va = 0;
     const v_stack_end = 0xfffffffff000;
-    preparePageTableForUser(self.pgd);
-    context.switchTtbr0(@intFromPtr(self.pgd));
+    preparePageTableForUser(self.pgd.?);
+    context.switchTtbr0(@intFromPtr(self.pgd.?));
+    context.invalidateCache();
     jumpToUserMode(va, v_stack_end);
     syscall.exit(0);
     while (true) {
@@ -132,7 +131,10 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
     // Handle Parent TrapFrame
     parent_trap_frame.x0 = t.id;
 
-    t.pgd.* = mm.map.deepCopy(self.pgd, 3);
+    t.pgd = self.allocator.create(mm.map.PageTable) catch {
+        @panic("Out of Memory! No buffer for thread page table.");
+    };
+    t.pgd.?.* = mm.map.deepCopy(self.pgd.?, 3);
 
     context.invalidateCache();
     context.switchTo(context.getCurrent(), context.getCurrent());
@@ -154,8 +156,6 @@ pub fn exec(trap_frame: *TrapFrame, name: []const u8) void {
         if (self.program_name) |pn| {
             self.allocator.free(pn);
         }
-        mm.map.deepDestroy(self.pgd, 3);
-        self.allocator.destroy(self.pgd);
 
         self.program_name = self.allocator.alloc(u8, name.len) catch {
             @panic("Out of Memory! No buffer for new program name.");
@@ -163,10 +163,15 @@ pub fn exec(trap_frame: *TrapFrame, name: []const u8) void {
         @memcpy(self.program_name.?, name);
         self.program_len = p.len;
 
+        if (self.pgd) |pgd| {
+            mm.map.deepDestroy(pgd, 3);
+            self.allocator.destroy(pgd);
+        }
+
         self.pgd = self.allocator.create(mm.map.PageTable) catch {
             @panic("Out of Memory! No buffer for thread page table.");
         };
-        self.pgd.* = @splat(.{});
+        self.pgd.?.* = @splat(.{});
 
         asm volatile (
             \\ mov sp, %[arg0]

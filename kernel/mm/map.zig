@@ -284,7 +284,7 @@ pub fn pageHandler() void {
     const self = thread.threadFromCurrent();
     const fault_address = registers.getFarEl1();
 
-    const result = virtToEntry(self.pgd, fault_address) catch {
+    const result = virtToEntry(self.pgd.?, fault_address) catch {
         @panic("Cannot get page table entry!");
     };
     if (result.depth == 0) {

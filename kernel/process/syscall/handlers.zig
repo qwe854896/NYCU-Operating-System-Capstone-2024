@@ -66,7 +66,7 @@ pub fn sysExec(trap_frame: *TrapFrame) void {
 pub fn sysMboxCall(trap_frame: *TrapFrame) void {
     const self: *ThreadContext = thread.threadFromCurrent();
     const va = trap_frame.x1;
-    const pa = mm.map.virtToPhys(self.pgd, va) catch {
+    const pa = mm.map.virtToPhys(self.pgd.?, va) catch {
         trap_frame.x0 = 0;
         return;
     };
