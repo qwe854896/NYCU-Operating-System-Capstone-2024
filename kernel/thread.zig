@@ -132,7 +132,7 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
 
     t.pgd.* = mm.map.deepCopy(self.pgd, 3);
 
-    context.switchTtbr0(@intFromPtr(self.pgd));
+    context.invalidateCache();
     context.switchTo(context.getCurrent(), context.getCurrent());
 
     const new_self: *volatile ThreadContext = threadFromCurrent();

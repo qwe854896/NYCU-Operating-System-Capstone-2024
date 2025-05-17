@@ -246,8 +246,9 @@ fn handleTranslationFault(entry: *PageTableEntry, info: GranularityInfo, self: *
 }
 
 fn handleCopyOnWriteFault(entry: *PageTableEntry, info: GranularityInfo, fault_address: u64) void {
+    const self = thread.threadFromCurrent();
     if (!entry.original_read_only) {
-        log.err("[Copy-on-write fault]: 0x{X}", .{fault_address});
+        log.err("[Copy-on-write fault]: 0x{X} at tid: {}", .{ fault_address, self.id });
 
         const page_frame = @as([*]u8, @ptrFromInt(@as(u64, entry.phys_addr) << 12 | 0xffff000000000000))[0..info.block_size];
 
@@ -258,9 +259,13 @@ fn handleCopyOnWriteFault(entry: *PageTableEntry, info: GranularityInfo, fault_a
             @memcpy(new_page_frame, page_frame);
 
             entry.phys_addr = @truncate(@intFromPtr(new_page_frame.ptr) >> 12);
+
             refCountAdd(new_page_frame);
             refCountRelease(page_frame);
+
+            log.info("New Page frame reference count: {d} {*}", .{ refCountGet(new_page_frame), new_page_frame.ptr });
         }
+        log.info("Page frame reference count: {d} {*}", .{ refCountGet(page_frame), page_frame.ptr });
 
         entry.read_only = entry.original_read_only;
         context.invalidateCache();
@@ -303,7 +308,7 @@ pub fn pageHandler() void {
 }
 
 pub fn deepCopy(page_table: *PageTable, comptime level: u2) PageTable {
-    var new_page_table: PageTable = undefined;
+    var new_page_table: PageTable = @splat(.{});
     for (page_table, 0..) |*entry, i| {
         if (!entry.allocated) continue;
 
