@@ -13,6 +13,21 @@ pub const PageTable = types.PageTable;
 pub const Granularity = enum { PTE, PMD, PUD, PGD };
 const getSingletonPageAllocator = main.getSingletonPageAllocator;
 
+const GranularityInfo = struct {
+    shift: u6,
+    block_size: usize,
+    mask: u64,
+
+    pub fn init(g: Granularity) @This() {
+        return switch (g) {
+            .PTE => .{ .shift = 12, .block_size = 1 << 12, .mask = 0xFFF },
+            .PMD => .{ .shift = 21, .block_size = 1 << 21, .mask = 0x1FFFFF },
+            .PUD => .{ .shift = 30, .block_size = 1 << 30, .mask = 0x3FFFFFFF },
+            .PGD => .{ .shift = 39, .block_size = 1 << 39, .mask = 0x7FFFFFFFFF },
+        };
+    }
+};
+
 // Cached page table allocation
 var page_table_cache: PageTableMemoryPool = undefined;
 
@@ -24,11 +39,6 @@ fn allocateTable() Error!*PageTable {
     return page_table_cache.create();
 }
 
-const PGD_SHIFT = 39;
-const PUD_SHIFT = 30;
-const PMD_SHIFT = 21;
-const PTE_SHIFT = 12;
-
 pub const Error = error{
     NoEntry,
 } || std.mem.Allocator.Error;
@@ -37,11 +47,9 @@ fn getLevelIndex(va: u64, comptime shift: u6) u9 {
     return @truncate((va >> shift) & 0x1FF);
 }
 
-pub const WalkEntries = struct {
-    pgd: ?*PageTableEntry = null,
-    pud: ?*PageTableEntry = null,
-    pmd: ?*PageTableEntry = null,
-    pte: ?*PageTableEntry = null,
+pub const WalkResult = struct {
+    entries: [4]?*PageTableEntry,
+    depth: u2,
 };
 
 fn walk(
@@ -49,56 +57,47 @@ fn walk(
     va: u64,
     alloc: bool,
     comptime granularity: Granularity,
-) Error!WalkEntries {
+) Error!WalkResult {
+    const current_info = comptime GranularityInfo.init(granularity);
     var current = page_table;
-    var entries = WalkEntries{};
+    var result = WalkResult{ .entries = undefined, .depth = 0 };
 
-    // Process upper levels
-    inline for (switch (granularity) {
-        else => unreachable,
-        .PUD => &.{PGD_SHIFT},
-        .PMD => &.{ PGD_SHIFT, PUD_SHIFT },
-        .PTE => &.{ PGD_SHIFT, PUD_SHIFT, PMD_SHIFT },
-    }) |shift| {
-        const index = getLevelIndex(va, shift);
-        const entry = &current[index];
+    outer: {
+        inline for (.{ .PGD, .PUD, .PMD }) |g| {
+            const info = comptime GranularityInfo.init(g);
+            if (info.shift <= current_info.shift) {
+                break :outer;
+            }
+            const index = getLevelIndex(va, info.shift);
+            const entry = &current[index];
 
-        if (entry.allocated) {
-            if (entry.not_block)
-                current = @ptrFromInt(@as(u64, entry.phys_addr << 12) | 0xffff000000000000);
-        } else if (alloc) {
-            const new_table = try allocateTable();
-            new_table.* = @splat(@bitCast(@as(u64, 0)));
-            entry.* = .{
-                .valid = true,
-                .allocated = true,
-                .not_block = true,
-                .phys_addr = @truncate(@intFromPtr(new_table.ptr) >> 12),
-            };
-            current = @ptrCast(new_table.ptr);
-        } else {
-            return entries;
+            if (!entry.allocated) {
+                if (!alloc) {
+                    return result;
+                }
+                const new_table = try allocateTable();
+                new_table.* = @splat(.{});
+                entry.* = .{
+                    .valid = true,
+                    .allocated = true,
+                    .not_block = true,
+                    .phys_addr = @truncate(@intFromPtr(new_table.ptr) >> 12),
+                };
+            }
+
+            current = @ptrFromInt(@as(u64, entry.phys_addr << 12) | 0xffff000000000000);
+            result.entries[result.depth] = entry;
+
+            if (!entry.not_block) {
+                return result;
+            }
+
+            result.depth += 1;
         }
-
-        // Store intermediate entries
-        switch (shift) {
-            PGD_SHIFT => entries.pgd = entry,
-            PUD_SHIFT => entries.pud = entry,
-            PMD_SHIFT => entries.pmd = entry,
-            else => unreachable,
-        }
-
-        if (!entry.not_block) return entries;
     }
 
-    switch (granularity) {
-        else => unreachable,
-        .PUD => entries.pud = &current[getLevelIndex(va, PUD_SHIFT)],
-        .PMD => entries.pmd = &current[getLevelIndex(va, PMD_SHIFT)],
-        .PTE => entries.pte = &current[getLevelIndex(va, PTE_SHIFT)],
-    }
-
-    return entries;
+    result.entries[result.depth] = &current[getLevelIndex(va, current_info.shift)];
+    return result;
 }
 
 pub fn mapPages(
@@ -109,27 +108,17 @@ pub fn mapPages(
     flags: struct { valid: bool, user: bool, read_only: bool, el0_exec: bool, el1_exec: bool, mair_index: u3, policy: types.PageFaultPolicy },
     comptime granularity: Granularity,
 ) !void {
-    const block_size: usize = switch (granularity) {
-        .PTE => 4096,
-        .PMD => 2 * 1024 * 1024,
-        .PUD => 1 * 1024 * 1024 * 1024,
-        else => unreachable,
-    };
+    const info = comptime GranularityInfo.init(granularity);
 
-    if ((va | pa | size) & (block_size - 1) != 0)
+    if ((va | pa | size) & (info.block_size - 1) != 0)
         return error.Unaligned;
 
     var current_va = va;
     var current_pa = pa;
 
     while (current_va < va + size) {
-        const entries = try walk(page_table, current_va, true, granularity);
-        const entry = switch (granularity) {
-            else => unreachable,
-            .PUD => entries.pud.?,
-            .PMD => entries.pmd.?,
-            .PTE => entries.pte.?,
-        };
+        const result = try walk(page_table, current_va, true, granularity);
+        const entry = result.entries[result.depth].?;
 
         // if (entry.valid)
         //     return error.AlreadyMapped;
@@ -149,17 +138,17 @@ pub fn mapPages(
             .policy = flags.policy,
         };
 
-        current_va += block_size;
-        current_pa += block_size;
+        current_va += info.block_size;
+        current_pa += info.block_size;
     }
 }
 
 fn virtToEntry(
     page_table: *PageTable,
     va: u64,
-) Error!WalkEntries {
-    const entries = try walk(page_table, va, false, .PTE);
-    return entries;
+) Error!WalkResult {
+    const result = try walk(page_table, va, false, .PTE);
+    return result;
 }
 
 fn calculatePhysicalAddress(
@@ -167,56 +156,46 @@ fn calculatePhysicalAddress(
     va: u64,
     comptime granularity: Granularity,
 ) u64 {
-    const mask = switch (granularity) {
-        .PTE => 0x00000FFF,
-        .PMD => 0x001FFFFF,
-        .PUD => 0x3FFFFFFF,
-        else => unreachable,
-    };
+    const info = comptime GranularityInfo.init(granularity);
     const phys_base = @as(u64, entry.phys_addr) << 12;
-    return 0xffff000000000000 | phys_base | (va & mask);
+    return 0xffff000000000000 | phys_base | (va & info.mask);
 }
 
 pub fn virtToPhys(
     page_table: *PageTable,
     va: u64,
 ) Error!u64 {
-    const entries = try virtToEntry(page_table, va);
-    return if (entries.pte) |pte|
-        calculatePhysicalAddress(pte, va, .PTE)
-    else if (entries.pmd) |pmd|
-        calculatePhysicalAddress(pmd, va, .PMD)
-    else if (entries.pud) |pud|
-        calculatePhysicalAddress(pud, va, .PUD)
-    else
-        error.NoEntry;
+    const result = try virtToEntry(page_table, va);
+    if (result.depth == 0) {
+        return error.NoEntry;
+    }
+    const entry = result.entries[result.depth].?;
+    switch (result.depth) {
+        else => unreachable,
+        1 => return calculatePhysicalAddress(entry, va, .PUD),
+        2 => return calculatePhysicalAddress(entry, va, .PMD),
+        3 => return calculatePhysicalAddress(entry, va, .PTE),
+    }
 }
 
 pub fn pageHandler() void {
     const self = thread.threadFromCurrent();
     const fault_address = registers.getFarEl1();
 
-    const entries = virtToEntry(self.pgd, fault_address) catch {
+    const result = virtToEntry(self.pgd, fault_address) catch {
         @panic("Cannot get page table entry!");
     };
-    const entry = if (entries.pte) |pte|
-        pte
-    else if (entries.pmd) |pmd|
-        pmd
-    else if (entries.pud) |pud|
-        pud
-    else {
+    if (result.depth == 0) {
         log.err("[Segmentation fault]: 0x{X} -> Kill Process", .{fault_address});
         thread.end();
-    };
-    const block_size: usize = if (entries.pte != null)
-        4096
-    else if (entries.pmd != null)
-        2 * 1024 * 1024
-    else if (entries.pud != null)
-        1 * 1024 * 1024 * 1024
-    else
-        unreachable;
+    }
+    const entry = result.entries[result.depth].?;
+    const info = GranularityInfo.init(switch (result.depth) {
+        else => unreachable,
+        1 => .PUD,
+        2 => .PMD,
+        3 => .PTE,
+    });
 
     // Data Fault Status Code.
     // 0b000111: Translation fault, level 3.
@@ -230,7 +209,7 @@ pub fn pageHandler() void {
             entry.valid = true;
             switch (entry.policy) {
                 .anonymous => {
-                    const new_page_frame = getSingletonPageAllocator().alloc(u8, block_size) catch {
+                    const new_page_frame = getSingletonPageAllocator().alloc(u8, info.block_size) catch {
                         @panic("Cannot allocate new page frame for program!");
                     };
                     entry.phys_addr = @truncate(@intFromPtr(new_page_frame.ptr) >> 12);
@@ -238,11 +217,11 @@ pub fn pageHandler() void {
                 },
                 .program => {
                     const program = initrd.getFileContent(self.program_name.?).?;
-                    const new_program = getSingletonPageAllocator().alloc(u8, block_size) catch {
+                    const new_program = getSingletonPageAllocator().alloc(u8, info.block_size) catch {
                         @panic("Cannot allocate new page frame for program!");
                     };
                     const offset = entry.phys_addr << 12;
-                    const copy_len = @min(offset + block_size, program.len) - offset;
+                    const copy_len = @min(offset + info.block_size, program.len) - offset;
                     @memcpy(new_program[0..copy_len], program[offset .. offset + copy_len]);
                     entry.phys_addr = @truncate(@intFromPtr(new_program.ptr) >> 12);
                     context.invalidateCache();
@@ -254,8 +233,8 @@ pub fn pageHandler() void {
             if (!entry.original_read_only) {
                 log.err("[Copy-on-write fault]: 0x{X}", .{fault_address});
 
-                const page_frame = @as([*]u8, @ptrFromInt(@as(u64, entry.phys_addr) << 12 | 0xffff000000000000))[0..block_size];
-                const new_page_frame = getSingletonPageAllocator().alloc(u8, block_size) catch {
+                const page_frame = @as([*]u8, @ptrFromInt(@as(u64, entry.phys_addr) << 12 | 0xffff000000000000))[0..info.block_size];
+                const new_page_frame = getSingletonPageAllocator().alloc(u8, info.block_size) catch {
                     @panic("Cannot allocate new page frame for program!");
                 };
                 @memcpy(new_page_frame, page_frame);
@@ -275,35 +254,22 @@ pub fn pageHandler() void {
     }
 }
 
-pub fn deepCopy(page_table: *PageTable, comptime granularity: Granularity) PageTable {
+pub fn deepCopy(page_table: *PageTable, comptime level: u2) PageTable {
     var new_page_table: PageTable = undefined;
     for (page_table, 0..) |*entry, i| {
-        if (entry.allocated) {
-            new_page_table[i] = entry.*;
-            if (entry.not_block and granularity != .PTE) {
-                const new_next_table = allocateTable() catch {
-                    @panic("Cannot allocate new page table!");
-                };
-                const next_table: *PageTable = @ptrFromInt(@as(u64, entry.phys_addr << 12) | 0xffff000000000000);
-                switch (granularity) {
-                    .PGD => {
-                        new_next_table.* = deepCopy(next_table, .PUD);
-                    },
-                    .PUD => {
-                        new_next_table.* = deepCopy(next_table, .PMD);
-                    },
-                    .PMD => {
-                        new_next_table.* = deepCopy(next_table, .PTE);
-                    },
-                    .PTE => unreachable,
-                }
-                new_page_table[i].phys_addr = @truncate(@intFromPtr(new_next_table.ptr) >> 12);
-            } else {
-                if (entry.policy != .direct) {
-                    new_page_table[i].read_only = true;
-                    entry.read_only = true;
-                }
-            }
+        if (!entry.allocated) continue;
+
+        new_page_table[i] = entry.*;
+        if (entry.not_block and level > 0) {
+            const new_next_table = allocateTable() catch {
+                @panic("Cannot allocate new page table!");
+            };
+            const next_table: *PageTable = @ptrFromInt(@as(u64, entry.phys_addr << 12) | 0xffff000000000000);
+            new_next_table.* = deepCopy(next_table, level - 1);
+            new_page_table[i].phys_addr = @truncate(@intFromPtr(new_next_table.ptr) >> 12);
+        } else if (entry.policy != .direct) {
+            new_page_table[i].read_only = true;
+            entry.read_only = true;
         }
     }
     return new_page_table;

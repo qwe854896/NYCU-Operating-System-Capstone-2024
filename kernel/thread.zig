@@ -60,7 +60,7 @@ pub const ThreadContext = struct {
                 .pc = @intFromPtr(&startKernel),
             },
         };
-        self.pgd.* = @splat(@bitCast(@as(u64, 0)));
+        self.pgd.* = @splat(.{});
         self.cpu_context.sp = @as(usize, @intFromPtr(self.kernel_stack.ptr)) + self.kernel_stack.len;
         return self;
     }
@@ -130,7 +130,7 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
     // Handle Parent TrapFrame
     parent_trap_frame.x0 = t.id;
 
-    t.pgd.* = mm.map.deepCopy(self.pgd, .PGD);
+    t.pgd.* = mm.map.deepCopy(self.pgd, 3);
 
     context.switchTtbr0(@intFromPtr(self.pgd));
     context.switchTo(context.getCurrent(), context.getCurrent());
@@ -161,7 +161,7 @@ pub fn exec(trap_frame: *TrapFrame, name: []const u8) void {
         self.pgd = self.allocator.create(mm.map.PageTable) catch {
             @panic("Out of Memory! No buffer for thread page table.");
         };
-        self.pgd.* = @splat(@bitCast(@as(u64, 0)));
+        self.pgd.* = @splat(.{});
 
         asm volatile (
             \\ mov sp, %[arg0]
