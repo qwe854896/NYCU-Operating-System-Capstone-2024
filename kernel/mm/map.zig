@@ -35,8 +35,13 @@ pub fn initPageTableCache(allocator: std.mem.Allocator) void {
     page_table_cache = PageTableMemoryPool.init(allocator);
 }
 
-fn allocateTable() Error!*PageTable {
+fn createPageTable() Error!*PageTable {
     return page_table_cache.create();
+}
+
+fn destroyPageTable(table: *PageTable) void {
+    page_table_cache.destroy(@alignCast(table));
+    log.info("Freeing page table: {d} {*}", .{ @sizeOf(PageTable), table });
 }
 
 // Global reference count storage
@@ -68,6 +73,7 @@ fn refCountRelease(slice: []const u8) void {
     entry.value_ptr.count -= 1;
 
     if (entry.value_ptr.count == 0) {
+        log.info("Freeing page frame: {d} {*}", .{ entry.value_ptr.size, slice.ptr });
         getSingletonPageAllocator().free(slice);
         _ = ref_counts.remove(@intFromPtr(slice.ptr));
     }
@@ -109,7 +115,7 @@ fn walk(
                 if (!alloc) {
                     return result;
                 }
-                const new_table = try allocateTable();
+                const new_table = try createPageTable();
                 new_table.* = @splat(.{});
                 entry.* = .{
                     .valid = true,
@@ -314,7 +320,7 @@ pub fn deepCopy(page_table: *PageTable, comptime level: u2) PageTable {
 
         new_page_table[i] = entry.*;
         if (entry.not_block and level > 0) {
-            const new_next_table = allocateTable() catch {
+            const new_next_table = createPageTable() catch {
                 @panic("Cannot allocate new page table!");
             };
             const next_table: *PageTable = @ptrFromInt(@as(u64, entry.phys_addr << 12) | 0xffff000000000000);
@@ -328,4 +334,19 @@ pub fn deepCopy(page_table: *PageTable, comptime level: u2) PageTable {
         }
     }
     return new_page_table;
+}
+
+pub fn deepDestroy(page_table: *PageTable, comptime level: u2) void {
+    for (page_table) |*entry| {
+        if (!entry.allocated) continue;
+
+        if (entry.not_block and level > 0) {
+            const next_table: *PageTable = @ptrFromInt(@as(u64, entry.phys_addr << 12) | 0xffff000000000000);
+            deepDestroy(next_table, level - 1);
+            destroyPageTable(next_table);
+        } else if (entry.valid and entry.policy != .direct) {
+            const page_frame: [*]u8 = @ptrFromInt(@as(u64, entry.phys_addr << 12) | 0xffff000000000000);
+            refCountRelease(page_frame[0..1]); // len is not important
+        }
+    }
 }

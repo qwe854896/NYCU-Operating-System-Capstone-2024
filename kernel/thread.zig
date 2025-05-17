@@ -67,6 +67,8 @@ pub const ThreadContext = struct {
 
     pub fn deinit(self: *Self) void {
         self.allocator.free(self.kernel_stack);
+        mm.map.deepDestroy(self.pgd, 3);
+        self.allocator.destroy(self.pgd);
         if (self.program_name) |pn| {
             self.allocator.free(pn);
         }
@@ -152,6 +154,9 @@ pub fn exec(trap_frame: *TrapFrame, name: []const u8) void {
         if (self.program_name) |pn| {
             self.allocator.free(pn);
         }
+        mm.map.deepDestroy(self.pgd, 3);
+        self.allocator.destroy(self.pgd);
+
         self.program_name = self.allocator.alloc(u8, name.len) catch {
             @panic("Out of Memory! No buffer for new program name.");
         };
