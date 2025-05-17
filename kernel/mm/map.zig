@@ -178,6 +178,55 @@ pub fn virtToPhys(
     }
 }
 
+fn handleSegmentationFault(fault_address: u64) noreturn {
+    log.err("[Segmentation fault]: 0x{X} -> Kill Process", .{fault_address});
+    thread.end();
+}
+
+fn handleTranslationFault(entry: *PageTableEntry, info: GranularityInfo, self: *thread.ThreadContext, fault_address: u64) void {
+    log.err("[Translation fault]: 0x{X}", .{fault_address});
+    entry.valid = true;
+    switch (entry.policy) {
+        .anonymous => {
+            const new_page_frame = getSingletonPageAllocator().alloc(u8, info.block_size) catch {
+                @panic("Cannot allocate new page frame for program!");
+            };
+            entry.phys_addr = @truncate(@intFromPtr(new_page_frame.ptr) >> 12);
+            context.invalidateCache();
+        },
+        .program => {
+            const program = initrd.getFileContent(self.program_name.?).?;
+            const new_program = getSingletonPageAllocator().alloc(u8, info.block_size) catch {
+                @panic("Cannot allocate new page frame for program!");
+            };
+            const offset = entry.phys_addr << 12;
+            const copy_len = @min(offset + info.block_size, program.len) - offset;
+            @memcpy(new_program[0..copy_len], program[offset .. offset + copy_len]);
+            entry.phys_addr = @truncate(@intFromPtr(new_program.ptr) >> 12);
+            context.invalidateCache();
+        },
+        .direct => {},
+    }
+}
+
+fn handleCopyOnWriteFault(entry: *PageTableEntry, info: GranularityInfo, fault_address: u64) void {
+    if (!entry.original_read_only) {
+        log.err("[Copy-on-write fault]: 0x{X}", .{fault_address});
+        const page_frame = @as([*]u8, @ptrFromInt(@as(u64, entry.phys_addr) << 12 | 0xffff000000000000))[0..info.block_size];
+        const new_page_frame = getSingletonPageAllocator().alloc(u8, info.block_size) catch {
+            @panic("Cannot allocate new page frame for program!");
+        };
+        @memcpy(new_page_frame, page_frame);
+
+        entry.phys_addr = @truncate(@intFromPtr(new_page_frame.ptr) >> 12);
+        entry.read_only = entry.original_read_only;
+
+        context.invalidateCache();
+    } else {
+        handleSegmentationFault(fault_address);
+    }
+}
+
 pub fn pageHandler() void {
     const self = thread.threadFromCurrent();
     const fault_address = registers.getFarEl1();
@@ -186,8 +235,7 @@ pub fn pageHandler() void {
         @panic("Cannot get page table entry!");
     };
     if (result.depth == 0) {
-        log.err("[Segmentation fault]: 0x{X} -> Kill Process", .{fault_address});
-        thread.end();
+        handleSegmentationFault(fault_address);
     }
     const entry = result.entries[result.depth].?;
     const info = GranularityInfo.init(switch (result.depth) {
@@ -204,52 +252,10 @@ pub fn pageHandler() void {
     const fault_type = status_code >> 2 & 0xf;
 
     switch (fault_type) {
-        0b0001 => {
-            log.err("[Translation fault]: 0x{X}", .{fault_address});
-            entry.valid = true;
-            switch (entry.policy) {
-                .anonymous => {
-                    const new_page_frame = getSingletonPageAllocator().alloc(u8, info.block_size) catch {
-                        @panic("Cannot allocate new page frame for program!");
-                    };
-                    entry.phys_addr = @truncate(@intFromPtr(new_page_frame.ptr) >> 12);
-                    context.invalidateCache();
-                },
-                .program => {
-                    const program = initrd.getFileContent(self.program_name.?).?;
-                    const new_program = getSingletonPageAllocator().alloc(u8, info.block_size) catch {
-                        @panic("Cannot allocate new page frame for program!");
-                    };
-                    const offset = entry.phys_addr << 12;
-                    const copy_len = @min(offset + info.block_size, program.len) - offset;
-                    @memcpy(new_program[0..copy_len], program[offset .. offset + copy_len]);
-                    entry.phys_addr = @truncate(@intFromPtr(new_program.ptr) >> 12);
-                    context.invalidateCache();
-                },
-                .direct => {},
-            }
-        },
-        0b0011 => {
-            if (!entry.original_read_only) {
-                log.err("[Copy-on-write fault]: 0x{X}", .{fault_address});
-
-                const page_frame = @as([*]u8, @ptrFromInt(@as(u64, entry.phys_addr) << 12 | 0xffff000000000000))[0..info.block_size];
-                const new_page_frame = getSingletonPageAllocator().alloc(u8, info.block_size) catch {
-                    @panic("Cannot allocate new page frame for program!");
-                };
-                @memcpy(new_page_frame, page_frame);
-
-                entry.phys_addr = @truncate(@intFromPtr(new_page_frame.ptr) >> 12);
-                entry.read_only = entry.original_read_only;
-
-                context.invalidateCache();
-            } else {
-                log.err("[Segmentation fault]: 0x{X} -> Kill Process", .{fault_address});
-                thread.end();
-            }
-        },
+        0b0001 => handleTranslationFault(entry, info, self, fault_address),
+        0b0011 => handleCopyOnWriteFault(entry, info, fault_address),
         else => {
-            // @panic("Unhandled page fault!");
+            @panic("Unhandled page fault!");
         },
     }
 }
