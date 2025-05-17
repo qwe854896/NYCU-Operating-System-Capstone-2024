@@ -101,6 +101,7 @@ export fn main(dtb_address: usize) void {
     allocator = da.allocator();
 
     mm.map.initPageTableCache(page_allocator);
+    mm.map.initPageFrameRefCounts(allocator);
 
     const kernel_pgd = page_allocator.create(mm.map.PageTable) catch {
         @panic("Cannot create kernel page table!");

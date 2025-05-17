@@ -39,6 +39,40 @@ fn allocateTable() Error!*PageTable {
     return page_table_cache.create();
 }
 
+// Global reference count storage
+const RefCountHashMap = std.AutoHashMap(usize, struct { count: usize, size: usize });
+var ref_counts: RefCountHashMap = undefined;
+
+pub fn initPageFrameRefCounts(allocator: std.mem.Allocator) void {
+    ref_counts = RefCountHashMap.init(allocator);
+}
+
+fn refCountGet(slice: []const u8) usize {
+    const entry = ref_counts.get(@intFromPtr(slice.ptr)) orelse return 0;
+    return entry.count;
+}
+
+fn refCountAdd(slice: []const u8) void {
+    const entry = ref_counts.getOrPut(@intFromPtr(slice.ptr)) catch {
+        @panic("Cannot allocate new page frame!");
+    };
+    if (entry.found_existing) {
+        entry.value_ptr.count += 1;
+    } else {
+        entry.value_ptr.* = .{ .count = 1, .size = slice.len };
+    }
+}
+
+fn refCountRelease(slice: []const u8) void {
+    const entry = ref_counts.getEntry(@intFromPtr(slice.ptr)) orelse return;
+    entry.value_ptr.count -= 1;
+
+    if (entry.value_ptr.count == 0) {
+        getSingletonPageAllocator().free(slice);
+        _ = ref_counts.remove(@intFromPtr(slice.ptr));
+    }
+}
+
 pub const Error = error{
     NoEntry,
 } || std.mem.Allocator.Error;
@@ -192,6 +226,7 @@ fn handleTranslationFault(entry: *PageTableEntry, info: GranularityInfo, self: *
                 @panic("Cannot allocate new page frame for program!");
             };
             entry.phys_addr = @truncate(@intFromPtr(new_page_frame.ptr) >> 12);
+            refCountAdd(new_page_frame);
             context.invalidateCache();
         },
         .program => {
@@ -203,6 +238,7 @@ fn handleTranslationFault(entry: *PageTableEntry, info: GranularityInfo, self: *
             const copy_len = @min(offset + info.block_size, program.len) - offset;
             @memcpy(new_program[0..copy_len], program[offset .. offset + copy_len]);
             entry.phys_addr = @truncate(@intFromPtr(new_program.ptr) >> 12);
+            refCountAdd(new_program);
             context.invalidateCache();
         },
         .direct => {},
@@ -212,15 +248,21 @@ fn handleTranslationFault(entry: *PageTableEntry, info: GranularityInfo, self: *
 fn handleCopyOnWriteFault(entry: *PageTableEntry, info: GranularityInfo, fault_address: u64) void {
     if (!entry.original_read_only) {
         log.err("[Copy-on-write fault]: 0x{X}", .{fault_address});
+
         const page_frame = @as([*]u8, @ptrFromInt(@as(u64, entry.phys_addr) << 12 | 0xffff000000000000))[0..info.block_size];
-        const new_page_frame = getSingletonPageAllocator().alloc(u8, info.block_size) catch {
-            @panic("Cannot allocate new page frame for program!");
-        };
-        @memcpy(new_page_frame, page_frame);
 
-        entry.phys_addr = @truncate(@intFromPtr(new_page_frame.ptr) >> 12);
+        if (refCountGet(page_frame) > 1) {
+            const new_page_frame = getSingletonPageAllocator().alloc(u8, info.block_size) catch {
+                @panic("Cannot allocate new page frame for program!");
+            };
+            @memcpy(new_page_frame, page_frame);
+
+            entry.phys_addr = @truncate(@intFromPtr(new_page_frame.ptr) >> 12);
+            refCountAdd(new_page_frame);
+            refCountRelease(page_frame);
+        }
+
         entry.read_only = entry.original_read_only;
-
         context.invalidateCache();
     } else {
         handleSegmentationFault(fault_address);
@@ -273,9 +315,11 @@ pub fn deepCopy(page_table: *PageTable, comptime level: u2) PageTable {
             const next_table: *PageTable = @ptrFromInt(@as(u64, entry.phys_addr << 12) | 0xffff000000000000);
             new_next_table.* = deepCopy(next_table, level - 1);
             new_page_table[i].phys_addr = @truncate(@intFromPtr(new_next_table.ptr) >> 12);
-        } else if (entry.policy != .direct) {
+        } else if (entry.valid and entry.policy != .direct) {
             new_page_table[i].read_only = true;
             entry.read_only = true;
+            const page_frame: [*]u8 = @ptrFromInt(@as(u64, entry.phys_addr << 12) | 0xffff000000000000);
+            refCountAdd(page_frame[0..1]); // len is not important
         }
     }
     return new_page_table;
