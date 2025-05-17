@@ -41,12 +41,16 @@ pub fn build(b: *Build) !void {
 }
 
 fn setupAArch64Target(b: *Build) ResolvedTarget {
-    const query = Target.Query.parse(.{
-        .arch_os_abi = "aarch64-freestanding-eabi",
-        .cpu_features = "cortex_a53",
-    }) catch @panic("Invalid target query");
-
-    return b.resolveTargetQuery(query);
+    return b.resolveTargetQuery(
+        .{
+            .cpu_arch = .aarch64,
+            .os_tag = .freestanding,
+            .abi = .eabi,
+            .cpu_model = .{
+                .explicit = &Target.aarch64.cpu.cortex_a53,
+            },
+        },
+    );
 }
 
 fn addStaticExecutable(b: *Build, options: struct {
