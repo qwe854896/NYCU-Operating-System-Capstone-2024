@@ -8,6 +8,8 @@ const heap = @import("lib/heap.zig");
 const dtb = @import("lib/dtb.zig");
 const thread = @import("thread.zig");
 const mm = @import("mm.zig");
+const Vfs = @import("fs/Vfs.zig");
+const TmpFs = @import("fs/TmpFs.zig");
 const uart = drivers.uart;
 const mailbox = drivers.mailbox;
 
@@ -46,6 +48,11 @@ pub fn getSingletonAllocator() std.mem.Allocator {
 var page_allocator: std.mem.Allocator = undefined;
 pub fn getSingletonPageAllocator() std.mem.Allocator {
     return page_allocator;
+}
+
+var vfs: Vfs = undefined;
+pub fn getSingletonVfs() *Vfs {
+    return &vfs;
 }
 
 // Main function for the kernel
@@ -116,6 +123,18 @@ export fn main(dtb_address: usize) void {
 
     initrd.init(allocator);
     defer initrd.deinit();
+
+    vfs = Vfs.init(allocator);
+    defer vfs.deinit();
+
+    vfs.registerFileSystem("tmpfs", TmpFs.fileSystem()) catch {
+        @panic("Cannot register tmpfs!");
+    };
+
+    if (!vfs.initRootfs(allocator, "tmpfs")) {
+        unreachable;
+    }
+    defer vfs.deinitRootfs();
 
     thread.create(allocator, shell.simpleShell);
     sched.idle(&allocator);

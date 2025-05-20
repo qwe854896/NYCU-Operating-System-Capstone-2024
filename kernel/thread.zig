@@ -7,6 +7,7 @@ const sched = @import("sched.zig");
 const thread_asm = @import("arch/aarch64/thread.zig");
 const mm = @import("mm.zig");
 const handlers = @import("process/syscall/handlers.zig");
+const Vfs = @import("fs/Vfs.zig");
 const jumpToUserMode = thread_asm.jumpToUserMode;
 const jumpToKernelMode = thread_asm.jumpToKernelMode;
 const log = std.log.scoped(.thread);
@@ -38,6 +39,9 @@ pub const ThreadContext = struct {
     program_len: ?usize = null,
     trap_frame: ?*processor.TrapFrame = null,
     sigkill_handler: ?usize = null,
+    cwd: ?[]u8 = null,
+    fd_table: [16]Vfs.File = undefined,
+    fd_count: u32 = 0,
 
     ended: bool = false,
     has_sigkill: bool = false,

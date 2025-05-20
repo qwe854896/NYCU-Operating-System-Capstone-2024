@@ -6,8 +6,12 @@ const context = @import("../../arch/aarch64/context.zig");
 const processor = @import("../../arch/aarch64/processor.zig");
 const thread = @import("../../thread.zig");
 const mm = @import("../../mm.zig");
+const main = @import("../../main.zig");
+const Vfs = @import("../../fs/Vfs.zig");
 const uart = drivers.uart;
 const mailbox = drivers.mailbox;
+const getSingletonVfs = main.getSingletonVfs;
+const getSingletonAllocator = main.getSingletonAllocator;
 
 const TrapFrame = processor.TrapFrame;
 const ThreadContext = thread.ThreadContext;
@@ -172,4 +176,65 @@ pub fn sysMmap(trap_frame: *TrapFrame) void {
         },
         .PTE,
     ) catch @bitCast(@as(i64, -1));
+}
+
+pub fn sysOpen(trap_frame: *TrapFrame) void {
+    const self: *ThreadContext = thread.threadFromCurrent();
+
+    const pathname: [:0]const u8 = std.mem.span(@as([*:0]const u8, @ptrFromInt(trap_frame.x0)));
+    const flags = trap_frame.x1;
+
+    self.fd_table[self.fd_count] = getSingletonVfs().open(pathname, @bitCast(@as(u32, @truncate(flags)))) catch {
+        trap_frame.x0 = @bitCast(@as(i64, -1));
+        return;
+    };
+
+    trap_frame.x0 = self.fd_count;
+    self.fd_count += 1;
+}
+
+pub fn sysClose(trap_frame: *TrapFrame) void {
+    const self: *ThreadContext = thread.threadFromCurrent();
+    const fd = trap_frame.x0;
+    Vfs.close(&self.fd_table[fd]);
+    trap_frame.x0 = 0;
+}
+
+pub fn sysWrite(trap_frame: *TrapFrame) void {
+    const self: *ThreadContext = thread.threadFromCurrent();
+    const fd = trap_frame.x0;
+    const buf: []const u8 = @as([*]const u8, @ptrFromInt(trap_frame.x1))[0..trap_frame.x2];
+    trap_frame.x0 = Vfs.write(&self.fd_table[fd], buf);
+}
+
+pub fn sysRead(trap_frame: *TrapFrame) void {
+    const self: *ThreadContext = thread.threadFromCurrent();
+    const fd = trap_frame.x0;
+    const buf: []u8 = @as([*]u8, @ptrFromInt(trap_frame.x1))[0..trap_frame.x2];
+    trap_frame.x0 = Vfs.read(&self.fd_table[fd], buf);
+}
+
+pub fn sysMkdir(trap_frame: *TrapFrame) void {
+    const pathname: [:0]const u8 = std.mem.span(@as([*:0]const u8, @ptrFromInt(trap_frame.x0)));
+    getSingletonVfs().mkdir(pathname) catch {
+        trap_frame.x0 = @bitCast(@as(i64, -1));
+        return;
+    };
+    trap_frame.x0 = 0;
+}
+
+pub fn sysMount(trap_frame: *TrapFrame) void {
+    const target: [:0]const u8 = std.mem.span(@as([*:0]const u8, @ptrFromInt(trap_frame.x1)));
+    const filesystem: [:0]const u8 = std.mem.span(@as([*:0]const u8, @ptrFromInt(trap_frame.x2)));
+
+    _ = getSingletonVfs().mount(
+        getSingletonAllocator(),
+        target,
+        filesystem,
+    ) catch {
+        trap_frame.x0 = @bitCast(@as(i64, -1));
+        return;
+    };
+
+    trap_frame.x0 = 0;
 }

@@ -16,6 +16,12 @@ pub fn dispatch(trap_frame: *TrapFrame) void {
         numbers.sys_sigkill => handlers.sysSigkill(trap_frame),
         numbers.sys_sigreturn => handlers.sysSigreturn(trap_frame),
         numbers.sys_mmap => handlers.sysMmap(trap_frame),
+        numbers.sys_open => handlers.sysOpen(trap_frame),
+        numbers.sys_close => handlers.sysClose(trap_frame),
+        numbers.sys_write => handlers.sysWrite(trap_frame),
+        numbers.sys_read => handlers.sysRead(trap_frame),
+        numbers.sys_mkdir => handlers.sysMkdir(trap_frame),
+        numbers.sys_mount => handlers.sysMount(trap_frame),
         else => {
             trap_frame.x0 = @bitCast(@as(isize, -38)); // -ENOSYS
         },
