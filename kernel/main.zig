@@ -10,6 +10,7 @@ const thread = @import("thread.zig");
 const mm = @import("mm.zig");
 const Vfs = @import("fs/Vfs.zig");
 const TmpFs = @import("fs/TmpFs.zig");
+const InitramFs = @import("fs/InitramFs.zig");
 const uart = drivers.uart;
 const mailbox = drivers.mailbox;
 
@@ -130,11 +131,22 @@ export fn main(dtb_address: usize) void {
     vfs.registerFileSystem("tmpfs", TmpFs.fileSystem()) catch {
         @panic("Cannot register tmpfs!");
     };
+    vfs.registerFileSystem("initramfs", InitramFs.fileSystem()) catch {
+        @panic("Cannot reigster initramfs!");
+    };
 
     if (!vfs.initRootfs(allocator, "tmpfs")) {
         unreachable;
     }
     defer vfs.deinitRootfs();
+
+    vfs.mkdir("/initramfs") catch {
+        @panic("Cannot create initramfs directory!");
+    };
+    const initramfs_mount = vfs.mount(allocator, "/initramfs", "initramfs") catch {
+        @panic("Cannot mount initramfs!");
+    };
+    defer Vfs.releaseMount(initramfs_mount);
 
     thread.create(allocator, shell.simpleShell);
     sched.idle(&allocator);

@@ -8,6 +8,7 @@ type: Type,
 
 pub const Type = enum {
     tmp,
+    initram,
     unknown,
 };
 
