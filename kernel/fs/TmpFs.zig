@@ -78,6 +78,7 @@ const TmpDir = struct {
                 self.allocator.destroy(dir_node);
             }
             self.allocator.destroy(vnode);
+            self.allocator.free(entry.key_ptr.*);
         }
         self.entries.deinit();
     }
@@ -101,14 +102,16 @@ const TmpDir = struct {
     fn create(ctx: *anyopaque, name: []const u8) ?*VNode {
         const dir: *TmpDir = @ptrCast(@alignCast(ctx));
         const file = dir.initFileVnode() orelse return null;
-        dir.entries.put(name, file) catch return null;
+        const copy_name = dir.allocator.dupe(u8, name) catch return null;
+        dir.entries.put(copy_name, file) catch return null;
         return file;
     }
 
     fn mkdir(ctx: *anyopaque, name: []const u8) ?*VNode {
         const dir: *TmpDir = @ptrCast(@alignCast(ctx));
         const child_dir = dir.initDirVnode() orelse return null;
-        dir.entries.put(name, child_dir) catch return null;
+        const copy_name = dir.allocator.dupe(u8, name) catch return null;
+        dir.entries.put(copy_name, child_dir) catch return null;
         return child_dir;
     }
 
