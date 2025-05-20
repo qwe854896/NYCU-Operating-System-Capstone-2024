@@ -74,6 +74,9 @@ pub const ThreadContext = struct {
         if (self.program_name) |pn| {
             self.allocator.free(pn);
         }
+        if (self.cwd) |cwd| {
+            self.allocator.free(cwd);
+        }
     }
 };
 
@@ -122,11 +125,13 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
     // @memcpy(t.user_stack, self.user_stack);
 
     t.sigkill_handler = self.sigkill_handler;
-    t.program_name = self.allocator.alloc(u8, self.program_name.?.len) catch {
+    t.program_name = self.allocator.dupe(u8, self.program_name.?) catch {
         @panic("Out of Memory! No buffer for new program name.");
     };
-    @memcpy(t.program_name.?, self.program_name.?);
     t.program_len = self.program_len;
+    t.cwd = self.allocator.dupe(u8, "/") catch {
+        @panic("Out of Memory! No buffer for current working directory.");
+    };
 
     // Handle Child TrapFrame
     t.trap_frame = @ptrFromInt(@intFromPtr(t.kernel_stack.ptr) + (@intFromPtr(parent_trap_frame) - @intFromPtr(self.kernel_stack.ptr)));
@@ -161,10 +166,9 @@ pub fn exec(trap_frame: *TrapFrame, name: []const u8) void {
             self.allocator.free(pn);
         }
 
-        self.program_name = self.allocator.alloc(u8, name.len) catch {
+        self.program_name = self.allocator.dupe(u8, name) catch {
             @panic("Out of Memory! No buffer for new program name.");
         };
-        @memcpy(self.program_name.?, name);
         self.program_len = p.len;
 
         if (self.pgd) |pgd| {
@@ -176,6 +180,13 @@ pub fn exec(trap_frame: *TrapFrame, name: []const u8) void {
             @panic("Out of Memory! No buffer for thread page table.");
         };
         self.pgd.?.* = @splat(.{});
+
+        if (self.cwd) |cwd| {
+            self.allocator.free(cwd);
+        }
+        self.cwd = self.allocator.dupe(u8, "/") catch {
+            @panic("Out of Memory! No buffer for current working directory.");
+        };
 
         asm volatile (
             \\ mov sp, %[arg0]

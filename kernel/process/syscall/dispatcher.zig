@@ -22,6 +22,7 @@ pub fn dispatch(trap_frame: *TrapFrame) void {
         numbers.sys_read => handlers.sysRead(trap_frame),
         numbers.sys_mkdir => handlers.sysMkdir(trap_frame),
         numbers.sys_mount => handlers.sysMount(trap_frame),
+        numbers.sys_chdir => handlers.sysChdir(trap_frame),
         else => {
             trap_frame.x0 = @bitCast(@as(isize, -38)); // -ENOSYS
         },

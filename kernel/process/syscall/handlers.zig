@@ -184,7 +184,13 @@ pub fn sysOpen(trap_frame: *TrapFrame) void {
     const pathname: [:0]const u8 = std.mem.span(@as([*:0]const u8, @ptrFromInt(trap_frame.x0)));
     const flags = trap_frame.x1;
 
-    self.fd_table[self.fd_count] = getSingletonVfs().open(pathname, @bitCast(@as(u32, @truncate(flags)))) catch {
+    const resolved_pathname = std.fs.path.resolvePosix(getSingletonAllocator(), &.{ self.cwd.?, pathname }) catch {
+        trap_frame.x0 = @bitCast(@as(i64, -1));
+        return;
+    };
+    defer getSingletonAllocator().free(resolved_pathname);
+
+    self.fd_table[self.fd_count] = getSingletonVfs().open(resolved_pathname, @bitCast(@as(u32, @truncate(flags)))) catch {
         trap_frame.x0 = @bitCast(@as(i64, -1));
         return;
     };
@@ -236,5 +242,16 @@ pub fn sysMount(trap_frame: *TrapFrame) void {
         return;
     };
 
+    trap_frame.x0 = 0;
+}
+
+pub fn sysChdir(trap_frame: *TrapFrame) void {
+    const self: *ThreadContext = thread.threadFromCurrent();
+    const path: [:0]const u8 = std.mem.span(@as([*:0]const u8, @ptrFromInt(trap_frame.x0)));
+
+    self.cwd = getSingletonAllocator().dupe(u8, path) catch {
+        trap_frame.x0 = @bitCast(@as(i64, -1));
+        return;
+    };
     trap_frame.x0 = 0;
 }
