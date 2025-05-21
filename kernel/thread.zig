@@ -76,6 +76,11 @@ pub const ThreadContext = struct {
         if (self.cwd) |cwd| {
             self.allocator.free(cwd);
         }
+        for (0..16) |fd| {
+            if (self.fd_table[fd]) |*file| {
+                Vfs.close(file);
+            }
+        }
     }
 };
 
@@ -133,6 +138,9 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
     };
     t.fd_table[1] = t.fd_table[0];
     t.fd_table[2] = t.fd_table[0];
+    for (3..16) |fd| {
+        t.fd_table[fd] = null;
+    }
 
     // Handle Child TrapFrame
     t.trap_frame = @ptrFromInt(@intFromPtr(t.kernel_stack.ptr) + (@intFromPtr(parent_trap_frame) - @intFromPtr(self.kernel_stack.ptr)));
@@ -191,6 +199,9 @@ pub fn exec(_: *TrapFrame, name: []const u8) void {
     };
     self.fd_table[1] = self.fd_table[0];
     self.fd_table[2] = self.fd_table[0];
+    for (3..16) |fd| {
+        self.fd_table[fd] = null;
+    }
 
     asm volatile (
         \\ mov sp, %[arg0]
