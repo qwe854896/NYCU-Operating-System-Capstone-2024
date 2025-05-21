@@ -43,7 +43,6 @@ fn createPageTable() Error!*PageTable {
 
 fn destroyPageTable(table: *PageTable) void {
     page_table_cache.destroy(@alignCast(table));
-    log.info("Freeing page table: {d} {*}", .{ @sizeOf(PageTable), table });
 }
 
 // Global reference count storage
@@ -75,7 +74,6 @@ fn refCountRelease(slice: []const u8) void {
     entry.value_ptr.count -= 1;
 
     if (entry.value_ptr.count == 0) {
-        log.info("Freeing page frame: {d} {*}", .{ entry.value_ptr.size, slice.ptr });
         getSingletonPageAllocator().free(slice);
         _ = ref_counts.remove(@intFromPtr(slice.ptr));
     }
@@ -179,7 +177,6 @@ pub fn mapPages(
         }
 
         if (current_va != va_hint + size) {
-            log.info("Page table entry already allocated, trying again: 0x{X} -> 0x{X}", .{ va_hint, va_hint + size });
             va_hint = va_hint + size;
             continue;
         }
@@ -209,7 +206,7 @@ pub fn mapPages(
         };
 
         if (flags.valid) {
-            handleTranslationFault(entry, info, current_va, true);
+            handleTranslationFault(entry, info);
         }
 
         current_va += info.block_size;
@@ -256,10 +253,7 @@ fn handleSegmentationFault(fault_address: u64) noreturn {
     thread.end();
 }
 
-fn handleTranslationFault(entry: *PageTableEntry, info: GranularityInfo, fault_address: u64, comptime prefault: bool) void {
-    if (!prefault) {
-        log.err("[Translation fault]: 0x{X}", .{fault_address});
-    }
+fn handleTranslationFault(entry: *PageTableEntry, info: GranularityInfo) void {
     entry.valid = true;
     switch (entry.policy) {
         .anonymous => {
@@ -289,9 +283,8 @@ fn handleTranslationFault(entry: *PageTableEntry, info: GranularityInfo, fault_a
 
 fn handleCopyOnWriteFault(entry: *PageTableEntry, info: GranularityInfo, fault_address: u64) void {
     const self = thread.threadFromCurrent();
+    _ = self;
     if (!entry.original_read_only) {
-        log.err("[Copy-on-write fault]: 0x{X} at tid: {}", .{ fault_address, self.id });
-
         const page_frame = @as([*]u8, @ptrFromInt(@as(u64, entry.phys_addr) << 12 | 0xffff000000000000))[0..info.block_size];
 
         if (refCountGet(page_frame) > 1) {
@@ -304,10 +297,7 @@ fn handleCopyOnWriteFault(entry: *PageTableEntry, info: GranularityInfo, fault_a
 
             refCountAdd(new_page_frame);
             refCountRelease(page_frame);
-
-            log.info("New Page frame reference count: {d} {*}", .{ refCountGet(new_page_frame), new_page_frame.ptr });
         }
-        log.info("Page frame reference count: {d} {*}", .{ refCountGet(page_frame), page_frame.ptr });
 
         entry.read_only = entry.original_read_only;
         context.invalidateCache();
@@ -338,7 +328,7 @@ pub fn pageHandler() void {
     const fault_type = status_code >> 2 & 0xf;
 
     switch (fault_type) {
-        0b0001 => handleTranslationFault(entry, info, fault_address, false),
+        0b0001 => handleTranslationFault(entry, info),
         0b0011 => handleCopyOnWriteFault(entry, info, fault_address),
         else => {
             @panic("Unhandled page fault!");
