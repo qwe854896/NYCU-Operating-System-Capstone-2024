@@ -190,19 +190,26 @@ pub fn sysOpen(trap_frame: *TrapFrame) void {
     };
     defer getSingletonAllocator().free(resolved_pathname);
 
-    self.fd_table[self.fd_count] = getSingletonVfs().open(resolved_pathname, @bitCast(@as(u32, @truncate(flags)))) catch {
+    for (0..16) |fd| {
+        if (self.fd_table[fd] == null) {
+            self.fd_table[fd] = getSingletonVfs().open(resolved_pathname, @bitCast(@as(u32, @truncate(flags)))) catch {
+                trap_frame.x0 = @bitCast(@as(i64, -1));
+                return;
+            };
+            trap_frame.x0 = fd;
+            break;
+        }
+    } else {
         trap_frame.x0 = @bitCast(@as(i64, -1));
         return;
-    };
-
-    trap_frame.x0 = self.fd_count;
-    self.fd_count += 1;
+    }
 }
 
 pub fn sysClose(trap_frame: *TrapFrame) void {
     const self: *ThreadContext = thread.threadFromCurrent();
     const fd = trap_frame.x0;
-    Vfs.close(&self.fd_table[fd]);
+    Vfs.close(&self.fd_table[fd].?);
+    self.fd_table[fd] = null;
     trap_frame.x0 = 0;
 }
 
@@ -210,14 +217,14 @@ pub fn sysWrite(trap_frame: *TrapFrame) void {
     const self: *ThreadContext = thread.threadFromCurrent();
     const fd = trap_frame.x0;
     const buf: []const u8 = @as([*]const u8, @ptrFromInt(trap_frame.x1))[0..trap_frame.x2];
-    trap_frame.x0 = Vfs.write(&self.fd_table[fd], buf);
+    trap_frame.x0 = Vfs.write(&self.fd_table[fd].?, buf);
 }
 
 pub fn sysRead(trap_frame: *TrapFrame) void {
     const self: *ThreadContext = thread.threadFromCurrent();
     const fd = trap_frame.x0;
     const buf: []u8 = @as([*]u8, @ptrFromInt(trap_frame.x1))[0..trap_frame.x2];
-    trap_frame.x0 = Vfs.read(&self.fd_table[fd], buf);
+    trap_frame.x0 = Vfs.read(&self.fd_table[fd].?, buf);
 }
 
 pub fn sysMkdir(trap_frame: *TrapFrame) void {
@@ -259,11 +266,11 @@ pub fn sysChdir(trap_frame: *TrapFrame) void {
 pub fn sysIoctl(trap_frame: *TrapFrame) void {
     const self: *ThreadContext = thread.threadFromCurrent();
     const fd = trap_frame.x0;
-    trap_frame.x0 = Vfs.ioctl(&self.fd_table[fd], trap_frame.x1, trap_frame.x2);
+    trap_frame.x0 = Vfs.ioctl(&self.fd_table[fd].?, trap_frame.x1, trap_frame.x2);
 }
 
 pub fn sysLseek64(trap_frame: *TrapFrame) void {
     const self: *ThreadContext = thread.threadFromCurrent();
     const fd = trap_frame.x0;
-    trap_frame.x0 = Vfs.lseek64(&self.fd_table[fd], @bitCast(trap_frame.x1), @enumFromInt(trap_frame.x2)) catch @bitCast(@as(i64, -1));
+    trap_frame.x0 = Vfs.lseek64(&self.fd_table[fd].?, @bitCast(trap_frame.x1), @enumFromInt(trap_frame.x2)) catch @bitCast(@as(i64, -1));
 }

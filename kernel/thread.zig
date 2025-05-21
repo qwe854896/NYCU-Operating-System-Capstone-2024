@@ -40,8 +40,7 @@ pub const ThreadContext = struct {
     trap_frame: ?*processor.TrapFrame = null,
     sigkill_handler: ?usize = null,
     cwd: ?[]u8 = null,
-    fd_table: [16]Vfs.File = undefined,
-    fd_count: u32 = 0,
+    fd_table: [16]?Vfs.File = undefined,
 
     ended: bool = false,
     has_sigkill: bool = false,
@@ -134,7 +133,6 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
     };
     t.fd_table[1] = t.fd_table[0];
     t.fd_table[2] = t.fd_table[0];
-    t.fd_count = 3;
 
     // Handle Child TrapFrame
     t.trap_frame = @ptrFromInt(@intFromPtr(t.kernel_stack.ptr) + (@intFromPtr(parent_trap_frame) - @intFromPtr(self.kernel_stack.ptr)));
@@ -193,7 +191,6 @@ pub fn exec(_: *TrapFrame, name: []const u8) void {
     };
     self.fd_table[1] = self.fd_table[0];
     self.fd_table[2] = self.fd_table[0];
-    self.fd_count = 3;
 
     asm volatile (
         \\ mov sp, %[arg0]
