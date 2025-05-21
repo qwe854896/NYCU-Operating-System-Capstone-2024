@@ -2,7 +2,7 @@ const std = @import("std");
 const File = @import("File.zig");
 const VNode = @import("VNode.zig");
 
-ptr: *anyopaque,
+ptr: ?*anyopaque,
 vtable: *const VTable,
 
 pub const VTable = struct {

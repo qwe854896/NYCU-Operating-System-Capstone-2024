@@ -7,9 +7,11 @@ const sched = @import("sched.zig");
 const thread_asm = @import("arch/aarch64/thread.zig");
 const mm = @import("mm.zig");
 const handlers = @import("process/syscall/handlers.zig");
+const main = @import("main.zig");
 const Vfs = @import("fs/Vfs.zig");
 const jumpToUserMode = thread_asm.jumpToUserMode;
 const jumpToKernelMode = thread_asm.jumpToKernelMode;
+const getSingletonVfs = main.getSingletonVfs;
 const log = std.log.scoped(.thread);
 
 const CpuContext = processor.CpuContext;
@@ -132,6 +134,12 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
     t.cwd = self.allocator.dupe(u8, "/") catch {
         @panic("Out of Memory! No buffer for current working directory.");
     };
+    t.fd_table[0] = getSingletonVfs().open("/dev/uart", @bitCast(@as(u32, 0))) catch {
+        @panic("Cannot open UART device.");
+    };
+    t.fd_table[1] = t.fd_table[0];
+    t.fd_table[2] = t.fd_table[0];
+    t.fd_count = 3;
 
     // Handle Child TrapFrame
     t.trap_frame = @ptrFromInt(@intFromPtr(t.kernel_stack.ptr) + (@intFromPtr(parent_trap_frame) - @intFromPtr(self.kernel_stack.ptr)));
@@ -187,6 +195,13 @@ pub fn exec(trap_frame: *TrapFrame, name: []const u8) void {
         self.cwd = self.allocator.dupe(u8, "/") catch {
             @panic("Out of Memory! No buffer for current working directory.");
         };
+
+        self.fd_table[0] = getSingletonVfs().open("/dev/uart", @bitCast(@as(u32, 0))) catch {
+            @panic("Cannot open UART device.");
+        };
+        self.fd_table[1] = self.fd_table[0];
+        self.fd_table[2] = self.fd_table[0];
+        self.fd_count = 3;
 
         asm volatile (
             \\ mov sp, %[arg0]
