@@ -214,8 +214,10 @@ const InitramFileNode = struct {
     }
 
     fn lseek64(file: *File, offset: isize, whence: Whence) usize {
+        const self: *InitramFileNode = @ptrCast(@alignCast(file.vnode));
         switch (whence) {
             .seek_set => file.f_pos = @intCast(offset),
+            .seek_end => file.f_pos = @intCast(@as(isize, @intCast(self.size)) + offset),
         }
         return file.f_pos;
     }

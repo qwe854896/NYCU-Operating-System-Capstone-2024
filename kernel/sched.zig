@@ -2,6 +2,7 @@ const std = @import("std");
 const context = @import("arch/aarch64/context.zig");
 const handlers = @import("process/syscall/handlers.zig");
 const thread = @import("thread.zig");
+const shell = @import("shell.zig");
 const log = std.log.scoped(.sched);
 
 const ThreadContext = thread.ThreadContext;
@@ -69,7 +70,10 @@ pub fn idle(allocator: *const std.mem.Allocator) void {
     const ctx = @intFromPtr(&node.data) + @offsetOf(Task, "thread_context") + @offsetOf(ThreadContext, "cpu_context");
     context.switchTo(ctx, ctx);
 
-    while (run_queue.len > 1) {
+    while (run_queue.len > 0) {
+        if (run_queue.len == 1) {
+            thread.create(allocator.*, shell.runSyscallImg);
+        }
         killZombies();
         schedule();
     }

@@ -62,6 +62,7 @@ fn close(_: *File) usize {
 fn lseek64(file: *File, offset: isize, whence: Whence) usize {
     switch (whence) {
         .seek_set => file.f_pos = @intCast(offset),
+        .seek_end => file.f_pos = @intCast(@as(isize, @intCast(lfb.len)) + offset),
     }
     return file.f_pos;
 }

@@ -22,9 +22,9 @@ const Command = enum {
     ExecFileContent,
 };
 
-fn runSyscallImg() void {
+pub fn runSyscallImg() void {
     var trap_frame: TrapFrame = undefined;
-    thread.exec(&trap_frame, "vfs1.img");
+    thread.exec(&trap_frame, "/initramfs/vfs1.img");
     thread.end();
 }
 

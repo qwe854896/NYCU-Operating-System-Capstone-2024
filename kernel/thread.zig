@@ -2,7 +2,6 @@ const std = @import("std");
 const processor = @import("arch/aarch64/processor.zig");
 const context = @import("arch/aarch64/context.zig");
 const syscall = @import("process/syscall/user.zig");
-const initrd = @import("fs/initrd.zig");
 const sched = @import("sched.zig");
 const thread_asm = @import("arch/aarch64/thread.zig");
 const mm = @import("mm.zig");
@@ -37,8 +36,7 @@ pub const ThreadContext = struct {
     kernel_stack: []u8,
 
     pgd: ?*mm.map.PageTable = null,
-    program_name: ?[]u8 = null,
-    program_len: ?usize = null,
+    program: ?Vfs.File = null,
     trap_frame: ?*processor.TrapFrame = null,
     sigkill_handler: ?usize = null,
     cwd: ?[]u8 = null,
@@ -73,8 +71,8 @@ pub const ThreadContext = struct {
             mm.map.deepDestroy(pgd, 3);
             self.allocator.destroy(pgd);
         }
-        if (self.program_name) |pn| {
-            self.allocator.free(pn);
+        if (self.program) |*program| {
+            Vfs.close(program);
         }
         if (self.cwd) |cwd| {
             self.allocator.free(cwd);
@@ -127,10 +125,7 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
     // @memcpy(t.user_stack, self.user_stack);
 
     t.sigkill_handler = self.sigkill_handler;
-    t.program_name = self.allocator.dupe(u8, self.program_name.?) catch {
-        @panic("Out of Memory! No buffer for new program name.");
-    };
-    t.program_len = self.program_len;
+    t.program = self.program.?;
     t.cwd = self.allocator.dupe(u8, "/") catch {
         @panic("Out of Memory! No buffer for current working directory.");
     };
@@ -165,56 +160,50 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
     }
 }
 
-pub fn exec(trap_frame: *TrapFrame, name: []const u8) void {
+pub fn exec(_: *TrapFrame, name: []const u8) void {
     const self: *ThreadContext = threadFromCurrent();
-    const program = initrd.getFileContent(name);
 
-    if (program) |p| {
-        if (self.program_name) |pn| {
-            self.allocator.free(pn);
-        }
-
-        self.program_name = self.allocator.dupe(u8, name) catch {
-            @panic("Out of Memory! No buffer for new program name.");
-        };
-        self.program_len = p.len;
-
-        if (self.pgd) |pgd| {
-            mm.map.deepDestroy(pgd, 3);
-            self.allocator.destroy(pgd);
-        }
-
-        self.pgd = self.allocator.create(mm.map.PageTable) catch {
-            @panic("Out of Memory! No buffer for thread page table.");
-        };
-        self.pgd.?.* = @splat(.{});
-
-        if (self.cwd) |cwd| {
-            self.allocator.free(cwd);
-        }
-        self.cwd = self.allocator.dupe(u8, "/") catch {
-            @panic("Out of Memory! No buffer for current working directory.");
-        };
-
-        self.fd_table[0] = getSingletonVfs().open("/dev/uart", @bitCast(@as(u32, 0))) catch {
-            @panic("Cannot open UART device.");
-        };
-        self.fd_table[1] = self.fd_table[0];
-        self.fd_table[2] = self.fd_table[0];
-        self.fd_count = 3;
-
-        asm volatile (
-            \\ mov sp, %[arg0]
-            \\ br %[arg1]
-            :
-            : [arg0] "r" (@intFromPtr(self.kernel_stack.ptr) + self.kernel_stack.len),
-              [arg1] "r" (@intFromPtr(&startUser)),
-        );
-
-        unreachable;
-    } else {
-        trap_frame.x0 = @bitCast(@as(i64, -1));
+    if (self.program) |*program| {
+        Vfs.close(program);
     }
+
+    self.program = getSingletonVfs().open(name, @bitCast(@as(u32, 0))) catch {
+        @panic("Cannot open program.");
+    };
+
+    if (self.pgd) |pgd| {
+        mm.map.deepDestroy(pgd, 3);
+        self.allocator.destroy(pgd);
+    }
+
+    self.pgd = self.allocator.create(mm.map.PageTable) catch {
+        @panic("Out of Memory! No buffer for thread page table.");
+    };
+    self.pgd.?.* = @splat(.{});
+
+    if (self.cwd) |cwd| {
+        self.allocator.free(cwd);
+    }
+    self.cwd = self.allocator.dupe(u8, "/") catch {
+        @panic("Out of Memory! No buffer for current working directory.");
+    };
+
+    self.fd_table[0] = getSingletonVfs().open("/dev/uart", @bitCast(@as(u32, 0))) catch {
+        @panic("Cannot open UART device.");
+    };
+    self.fd_table[1] = self.fd_table[0];
+    self.fd_table[2] = self.fd_table[0];
+    self.fd_count = 3;
+
+    asm volatile (
+        \\ mov sp, %[arg0]
+        \\ br %[arg1]
+        :
+        : [arg0] "r" (@intFromPtr(self.kernel_stack.ptr) + self.kernel_stack.len),
+          [arg1] "r" (@intFromPtr(&startUser)),
+    );
+
+    unreachable;
 }
 
 pub fn kill(pid: u32) void {
@@ -233,10 +222,14 @@ fn preparePageTableForUser(
     const v_stack_start = 0xffffffffb000;
     const v_stack_end = 0xfffffffff000;
 
+    const program_len = Vfs.lseek64(&self.program.?, 0, .seek_end) catch {
+        @panic("Cannot get program size.");
+    };
+
     _ = mm.map.mapPages(
         pgd,
         va,
-        std.mem.alignForwardLog2(self.program_len.?, 12),
+        std.mem.alignForwardLog2(program_len, 12),
         0,
         .{
             .valid = false,

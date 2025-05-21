@@ -3,8 +3,8 @@ const types = @import("types.zig");
 const main = @import("../main.zig");
 const thread = @import("../thread.zig");
 const registers = @import("../arch/aarch64/registers.zig");
-const initrd = @import("../fs/initrd.zig");
 const context = @import("../arch/aarch64/context.zig");
+const Vfs = @import("../fs/Vfs.zig");
 const log = std.log.scoped(.map);
 
 const PageTableMemoryPool = std.heap.MemoryPoolAligned(PageTable, 4096);
@@ -266,14 +266,19 @@ fn handleTranslationFault(entry: *PageTableEntry, info: GranularityInfo) void {
         },
         .program => {
             const self = thread.threadFromCurrent();
-            const program = initrd.getFileContent(self.program_name.?).?;
+
+            const offset = entry.phys_addr << 12;
+            _ = Vfs.lseek64(&self.program.?, offset, .seek_set) catch {
+                @panic("Vfs system error!");
+            };
+
             const new_program = getSingletonPageAllocator().alloc(u8, info.block_size) catch {
                 @panic("Cannot allocate new page frame for program!");
             };
-            const offset = entry.phys_addr << 12;
-            const copy_len = @min(offset + info.block_size, program.len) - offset;
-            @memcpy(new_program[0..copy_len], program[offset .. offset + copy_len]);
+            _ = Vfs.read(&self.program.?, new_program);
+
             entry.phys_addr = @truncate(@intFromPtr(new_program.ptr) >> 12);
+
             refCountAdd(new_program);
             context.invalidateCache();
         },

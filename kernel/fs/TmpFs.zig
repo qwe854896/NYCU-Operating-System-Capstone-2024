@@ -217,6 +217,7 @@ const TmpFileNode = struct {
     fn lseek64(file: *File, offset: isize, whence: Whence) usize {
         switch (whence) {
             .seek_set => file.f_pos = @intCast(offset),
+            .seek_end => file.f_pos = @intCast(4096 + offset),
         }
         return file.f_pos;
     }

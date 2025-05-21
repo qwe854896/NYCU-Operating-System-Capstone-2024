@@ -16,4 +16,5 @@ pub const VTable = struct {
 
 pub const Whence = enum(usize) {
     seek_set = 0,
+    seek_end = 2,
 };

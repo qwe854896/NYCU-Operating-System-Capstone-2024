@@ -2,7 +2,6 @@ const std = @import("std");
 const drivers = @import("drivers");
 const exception = @import("exception.zig");
 const sched = @import("sched.zig");
-const shell = @import("shell.zig");
 const initrd = @import("fs/initrd.zig");
 const heap = @import("lib/heap.zig");
 const dtb = @import("lib/dtb.zig");
@@ -166,7 +165,6 @@ export fn main(dtb_address: usize) void {
         @panic("Cannot create /dev/framebuffer!");
     };
 
-    thread.create(allocator, shell.simpleShell);
     sched.idle(&allocator);
 }
 
