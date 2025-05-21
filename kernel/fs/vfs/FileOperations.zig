@@ -6,11 +6,12 @@ ptr: ?*anyopaque,
 vtable: *const VTable,
 
 pub const VTable = struct {
-    open: ?*const fn (*anyopaque) ?File,
-    read: ?*const fn (file: *File, buf: []u8) usize,
-    write: ?*const fn (file: *File, buf: []const u8) usize,
-    close: ?*const fn (file: *File) usize,
-    lseek64: ?*const fn (file: *File, offset: isize, whence: Whence) usize,
+    open: ?*const fn (*anyopaque) ?File = null,
+    read: ?*const fn (file: *File, buf: []u8) usize = null,
+    write: ?*const fn (file: *File, buf: []const u8) usize = null,
+    close: ?*const fn (file: *File) usize = null,
+    lseek64: ?*const fn (file: *File, offset: isize, whence: Whence) usize = null,
+    ioctl: ?*const fn (file: *File, request: usize, arg: usize) usize = null,
 };
 
 pub const Whence = enum(usize) {

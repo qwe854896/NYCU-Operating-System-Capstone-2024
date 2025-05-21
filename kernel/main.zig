@@ -12,6 +12,7 @@ const Vfs = @import("fs/Vfs.zig");
 const TmpFs = @import("fs/TmpFs.zig");
 const InitramFs = @import("fs/InitramFs.zig");
 const UartVNode = @import("fs/UartVNode.zig");
+const FramebufferVNode = @import("fs/FramebufferVNode.zig");
 const uart = drivers.uart;
 const mailbox = drivers.mailbox;
 
@@ -138,6 +139,9 @@ export fn main(dtb_address: usize) void {
     vfs.registerDeviceFile(0, UartVNode.fileNodeOps()) catch {
         @panic("Cannot register uart device node");
     };
+    vfs.registerDeviceFile(1, FramebufferVNode.fileNodeOps()) catch {
+        @panic("Cannot register uart device node");
+    };
 
     if (!vfs.initRootfs(allocator, "tmpfs")) {
         unreachable;
@@ -157,6 +161,9 @@ export fn main(dtb_address: usize) void {
     };
     vfs.mknod("/dev/uart", 0, 0) catch {
         @panic("Cannot create /dev/uart!");
+    };
+    vfs.mknod("/dev/framebuffer", 0, 1) catch {
+        @panic("Cannot create /dev/framebuffer!");
     };
 
     thread.create(allocator, shell.simpleShell);

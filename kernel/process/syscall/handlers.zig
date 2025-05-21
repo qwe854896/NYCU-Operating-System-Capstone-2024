@@ -255,3 +255,15 @@ pub fn sysChdir(trap_frame: *TrapFrame) void {
     };
     trap_frame.x0 = 0;
 }
+
+pub fn sysIoctl(trap_frame: *TrapFrame) void {
+    const self: *ThreadContext = thread.threadFromCurrent();
+    const fd = trap_frame.x0;
+    trap_frame.x0 = Vfs.ioctl(&self.fd_table[fd], trap_frame.x1, trap_frame.x2);
+}
+
+pub fn sysLseek64(trap_frame: *TrapFrame) void {
+    const self: *ThreadContext = thread.threadFromCurrent();
+    const fd = trap_frame.x0;
+    trap_frame.x0 = Vfs.lseek64(&self.fd_table[fd], @bitCast(trap_frame.x1), @enumFromInt(trap_frame.x2)) catch @bitCast(@as(i64, -1));
+}

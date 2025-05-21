@@ -98,6 +98,11 @@ pub fn read(file: *File, buf: []u8) usize {
     return file.f_ops.vtable.read.?(file, buf);
 }
 
+pub fn ioctl(file: *File, request: usize, arg: usize) usize {
+    guard(file.f_ops.vtable.ioctl != null) catch return 0;
+    return file.f_ops.vtable.ioctl.?(file, request, arg);
+}
+
 pub fn mkdir(self: *Self, pathname: []const u8) !void {
     // Split into parent directory and new dir name
     const dirname = std.fs.path.dirname(pathname) orelse return error.EINVAL;
