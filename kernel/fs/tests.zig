@@ -10,9 +10,9 @@ fn withTmpVfs(comptime testFn: anytype) !void {
     var vfs = Vfs.init(allocator);
     defer vfs.deinit();
 
-    try vfs.registerFileSystem("tmpfs", TmpFs.fileSystem());
+    try vfs.registerFileSystem(TmpFs.fileSystem());
 
-    if (!vfs.initRootfs(allocator, "tmpfs")) {
+    if (!vfs.initRootfs(allocator, TmpFs.fileSystem().name)) {
         unreachable;
     }
     defer vfs.deinitRootfs();
@@ -113,7 +113,7 @@ test "mount isolation" {
             try vfs.mkdir(mount_point);
 
             // Mount new instance
-            const mnt = try vfs.mount(testing.allocator, mount_point, "tmpfs");
+            const mnt = try vfs.mount(testing.allocator, mount_point, TmpFs.fileSystem().name);
             defer Vfs.releaseMount(mnt);
 
             // Create file in mount
@@ -140,7 +140,7 @@ test "remove mount point" {
             try vfs.mkdir(mount_point);
 
             // Mount new instance
-            const mnt = try vfs.mount(testing.allocator, mount_point, "tmpfs");
+            const mnt = try vfs.mount(testing.allocator, mount_point, TmpFs.fileSystem().name);
             _ = mnt;
 
             // Create file in mount
@@ -203,7 +203,7 @@ test "Basic 2: tmpdir" {
             try testing.expectEqual(written_1, read_1);
             try testing.expectEqualStrings(test_data_1, buffer[0..read_1]);
 
-            const mnt = try vfs.mount(testing.allocator, test_dir, "tmpfs");
+            const mnt = try vfs.mount(testing.allocator, test_dir, TmpFs.fileSystem().name);
             defer Vfs.releaseMount(mnt);
 
             file = try vfs.open(test_path, .{ .creat = true });

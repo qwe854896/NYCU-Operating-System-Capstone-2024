@@ -19,7 +19,7 @@ pub fn fileSystem() FileSystem {
             .setupMount = setupMount,
             .releaseRoot = releaseRoot,
         },
-        .type = .initram,
+        .name = "initramfs",
     };
 }
 
@@ -44,7 +44,7 @@ fn initRootVnode(allocator: Allocator) ?*VNode {
     node.* = .{
         .ptr = root_dir,
         .mount = null,
-        .v_ops = root_dir.vOps(),
+        .v_ops = InitramDir.vOps(),
         .f_ops = null,
     };
 
@@ -92,9 +92,8 @@ const InitramDir = struct {
         self.entries.deinit();
     }
 
-    pub fn vOps(self: *InitramDir) VNodeOperations {
+    pub fn vOps() VNodeOperations {
         return .{
-            .ptr = self,
             .vtable = &.{
                 .lookup = lookup,
                 .create = create,
@@ -124,7 +123,7 @@ const InitramDir = struct {
             .ptr = file,
             .mount = null,
             .v_ops = null,
-            .f_ops = file.fileNodeOps(),
+            .f_ops = InitramFileNode.fileNodeOps(),
         };
         return node;
     }
@@ -136,7 +135,7 @@ const InitramDir = struct {
         node.* = .{
             .ptr = child_dir,
             .mount = null,
-            .v_ops = child_dir.vOps(),
+            .v_ops = InitramDir.vOps(),
             .f_ops = null,
         };
         return node;
@@ -161,9 +160,8 @@ const InitramFileNode = struct {
         self.allocator.free(self.data);
     }
 
-    pub fn fileNodeOps(self: *InitramFileNode) FileOperations {
+    pub fn fileNodeOps() FileOperations {
         return .{
-            .ptr = self,
             .vtable = &.{
                 .open = open,
                 .read = null,
@@ -174,9 +172,8 @@ const InitramFileNode = struct {
         };
     }
 
-    fn fileOps(self: *InitramFileNode) FileOperations {
+    fn fileOps() FileOperations {
         return .{
-            .ptr = self,
             .vtable = &.{
                 .open = null,
                 .read = read,
@@ -192,7 +189,7 @@ const InitramFileNode = struct {
         return .{
             .vnode = self,
             .f_pos = 0,
-            .f_ops = self.fileOps(),
+            .f_ops = fileOps(),
             .flags = .{},
         };
     }

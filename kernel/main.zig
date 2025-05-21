@@ -129,10 +129,10 @@ export fn main(dtb_address: usize) void {
     vfs = Vfs.init(allocator);
     defer vfs.deinit();
 
-    vfs.registerFileSystem("tmpfs", TmpFs.fileSystem()) catch {
+    vfs.registerFileSystem(TmpFs.fileSystem()) catch {
         @panic("Cannot register tmpfs!");
     };
-    vfs.registerFileSystem("initramfs", InitramFs.fileSystem()) catch {
+    vfs.registerFileSystem(InitramFs.fileSystem()) catch {
         @panic("Cannot reigster initramfs!");
     };
     vfs.registerDeviceFile(0, UartVNode.fileNodeOps()) catch {
@@ -142,7 +142,7 @@ export fn main(dtb_address: usize) void {
         @panic("Cannot register uart device node");
     };
 
-    if (!vfs.initRootfs(allocator, "tmpfs")) {
+    if (!vfs.initRootfs(allocator, TmpFs.fileSystem().name)) {
         unreachable;
     }
     defer vfs.deinitRootfs();
@@ -150,7 +150,7 @@ export fn main(dtb_address: usize) void {
     vfs.mkdir("/initramfs") catch {
         @panic("Cannot create initramfs directory!");
     };
-    const initramfs_mount = vfs.mount(allocator, "/initramfs", "initramfs") catch {
+    const initramfs_mount = vfs.mount(allocator, "/initramfs", InitramFs.fileSystem().name) catch {
         @panic("Cannot mount initramfs!");
     };
     defer Vfs.releaseMount(initramfs_mount);

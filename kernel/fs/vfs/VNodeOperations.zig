@@ -1,6 +1,5 @@
 const VNode = @import("VNode.zig");
 
-ptr: *anyopaque,
 vtable: *const VTable,
 
 pub const VTable = struct {

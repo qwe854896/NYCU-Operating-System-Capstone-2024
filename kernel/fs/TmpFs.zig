@@ -19,7 +19,7 @@ pub fn fileSystem() FileSystem {
             .setupMount = setupMount,
             .releaseRoot = releaseRoot,
         },
-        .type = .tmp,
+        .name = "tmpfs",
     };
 }
 
@@ -36,7 +36,7 @@ fn initRootVnode(allocator: Allocator) ?*VNode {
     node.* = .{
         .ptr = root_dir,
         .mount = null,
-        .v_ops = root_dir.vOps(),
+        .v_ops = TmpDir.vOps(),
         .f_ops = null,
     };
 
@@ -83,9 +83,8 @@ const TmpDir = struct {
         self.entries.deinit();
     }
 
-    pub fn vOps(self: *TmpDir) VNodeOperations {
+    pub fn vOps() VNodeOperations {
         return .{
-            .ptr = self,
             .vtable = &.{
                 .lookup = lookup,
                 .create = create,
@@ -123,7 +122,7 @@ const TmpDir = struct {
             .ptr = file,
             .mount = null,
             .v_ops = null,
-            .f_ops = file.fileNodeOps(),
+            .f_ops = TmpFileNode.fileNodeOps(),
         };
         return node;
     }
@@ -135,7 +134,7 @@ const TmpDir = struct {
         node.* = .{
             .ptr = child_dir,
             .mount = null,
-            .v_ops = child_dir.vOps(),
+            .v_ops = TmpDir.vOps(),
             .f_ops = null,
         };
         return node;
@@ -157,9 +156,8 @@ const TmpFileNode = struct {
         _ = self;
     }
 
-    pub fn fileNodeOps(self: *TmpFileNode) FileOperations {
+    pub fn fileNodeOps() FileOperations {
         return .{
-            .ptr = self,
             .vtable = &.{
                 .open = open,
                 .read = null,
@@ -170,9 +168,8 @@ const TmpFileNode = struct {
         };
     }
 
-    fn fileOps(self: *TmpFileNode) FileOperations {
+    fn fileOps() FileOperations {
         return .{
-            .ptr = self,
             .vtable = &.{
                 .open = null,
                 .read = read,
@@ -188,7 +185,7 @@ const TmpFileNode = struct {
         return .{
             .vnode = self,
             .f_pos = 0,
-            .f_ops = self.fileOps(),
+            .f_ops = fileOps(),
             .flags = .{},
         };
     }

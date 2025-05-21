@@ -29,8 +29,8 @@ pub fn deinit(self: *Self) void {
     self.devicefiles.deinit();
 }
 
-pub fn registerFileSystem(self: *Self, fs_name: []const u8, fs: FileSystem) !void {
-    try self.filesystems.put(fs_name, fs);
+pub fn registerFileSystem(self: *Self, fs: FileSystem) !void {
+    try self.filesystems.put(fs.name, fs);
 }
 
 pub fn registerDeviceFile(self: *Self, dev: u64, fo: FileOperations) !void {
@@ -69,15 +69,15 @@ pub fn open(self: *Self, pathname: []const u8, flags: File.Flags) !File {
     }
 
     // Check if file exists in parent
-    if (parent_dir.v_ops.?.vtable.lookup(parent_dir.v_ops.?.ptr, filename)) |vnode| {
-        return vnode.f_ops.?.vtable.open.?(vnode.f_ops.?.ptr orelse vnode) orelse error.ENOENT;
+    if (parent_dir.v_ops.?.vtable.lookup(parent_dir.ptr, filename)) |vnode| {
+        return vnode.f_ops.?.vtable.open.?(vnode.ptr) orelse error.ENOENT;
     } else {
         if (!flags.creat) return error.ENOENT;
 
         // Create new file in parent directory
-        const new_file = parent_dir.v_ops.?.vtable.create(parent_dir.v_ops.?.ptr, filename) orelse return error.EIO;
+        const new_file = parent_dir.v_ops.?.vtable.create(parent_dir.ptr, filename) orelse return error.EIO;
 
-        return new_file.f_ops.?.vtable.open.?(new_file.f_ops.?.ptr orelse new_file) orelse error.ENOENT;
+        return new_file.f_ops.?.vtable.open.?(new_file.ptr) orelse error.ENOENT;
     }
     return error.EIO;
 }
@@ -112,7 +112,7 @@ pub fn mkdir(self: *Self, pathname: []const u8) !void {
     const parent_dir = try self.lookup(dirname);
 
     // Create directory in parent
-    _ = parent_dir.v_ops.?.vtable.mkdir(parent_dir.v_ops.?.ptr, new_dir_name) orelse return error.EIO;
+    _ = parent_dir.v_ops.?.vtable.mkdir(parent_dir.ptr, new_dir_name) orelse return error.EIO;
 }
 
 pub fn lseek64(file: *File, offset: isize, whence: Whence) !usize {
@@ -168,7 +168,7 @@ fn lookup(self: *Self, path: []const u8) !*VNode {
         }
 
         guard(current.v_ops != null) catch return error.ENOTDIR;
-        current = current.v_ops.?.vtable.lookup(current.v_ops.?.ptr, component) orelse return error.ENOENT;
+        current = current.v_ops.?.vtable.lookup(current.ptr, component) orelse return error.ENOENT;
     }
 
     return current;
@@ -188,11 +188,11 @@ pub fn mknod(self: *Self, pathname: []const u8, mode: u32, dev: u64) !void {
         parent_dir = m.root;
     }
 
-    if (parent_dir.v_ops.?.vtable.lookup(parent_dir.v_ops.?.ptr, filename)) |vnode| {
+    if (parent_dir.v_ops.?.vtable.lookup(parent_dir.ptr, filename)) |vnode| {
         _ = vnode;
         return error.EEXIST;
     } else {
-        const new_file = parent_dir.v_ops.?.vtable.create(parent_dir.v_ops.?.ptr, filename) orelse return error.EIO;
+        const new_file = parent_dir.v_ops.?.vtable.create(parent_dir.ptr, filename) orelse return error.EIO;
         new_file.f_ops = self.devicefiles.get(dev) orelse return error.ENODEV;
         return;
     }

@@ -14,7 +14,6 @@ var lfb: []u8 = undefined;
 
 pub fn fileNodeOps() FileOperations {
     return .{
-        .ptr = null,
         .vtable = &.{
             .open = open,
         },
@@ -23,7 +22,6 @@ pub fn fileNodeOps() FileOperations {
 
 fn fileOps() FileOperations {
     return .{
-        .ptr = null,
         .vtable = &.{
             .open = null,
             .read = read,

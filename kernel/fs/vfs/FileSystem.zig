@@ -4,13 +4,7 @@ const Mount = @import("Mount.zig");
 const VNode = @import("VNode.zig");
 
 vtable: *const VTable,
-type: Type,
-
-pub const Type = enum {
-    tmp,
-    initram,
-    unknown,
-};
+name: []const u8,
 
 pub const VTable = struct {
     setupMount: *const fn (Allocator) ?Mount,
