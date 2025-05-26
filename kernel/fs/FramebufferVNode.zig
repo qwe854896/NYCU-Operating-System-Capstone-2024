@@ -65,7 +65,7 @@ fn lseek64(file: *File, offset: isize, whence: Whence) usize {
     return file.f_pos;
 }
 
-const FramebufferInfo = packed struct {
+const FramebufferInfo = struct {
     width: u32,
     height: u32,
     pitch: u32,
