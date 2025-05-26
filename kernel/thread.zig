@@ -52,7 +52,7 @@ pub const ThreadContext = struct {
         var self = Self{
             .id = id,
             .entry = @intFromPtr(entry),
-            .kernel_stack = allocator.alignedAlloc(u8, 16, 0x8000) catch {
+            .kernel_stack = allocator.alignedAlloc(u8, 16, 0x10000) catch {
                 @panic("Out of Memory! No buffer for thread kernel stack.");
             },
             .allocator = allocator,
