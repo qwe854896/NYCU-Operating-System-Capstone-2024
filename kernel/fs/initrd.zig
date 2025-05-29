@@ -16,7 +16,7 @@ pub fn deinit() void {
     cpio.Cpio.deinit();
 }
 
-pub fn initRamfsCallback(dtb_root: *dtb.Node) void {
+pub fn initRamfsCallback(dtb_root: *const dtb.Node) void {
     if (dtb_root.propAt(&.{"chosen"}, .LinuxInitrdStart)) |prop| {
         initrd_start_ptr = @ptrFromInt(prop);
     }

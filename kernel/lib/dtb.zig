@@ -3,24 +3,26 @@ const dtb = @import("dtb/dtb.zig");
 
 pub const Node = dtb.Node;
 pub const Prop = dtb.Prop;
+pub const totalSize = dtb.totalSize;
 
-var dtb_root: *dtb.Node = undefined;
+const Self = @This();
 
-pub fn init(allocator: std.mem.Allocator, dtb_address: usize) u32 {
-    const dtb_size = dtb.totalSize(@ptrFromInt(dtb_address)) catch 0;
+root: *Node,
+
+pub fn init(allocator: std.mem.Allocator, dtb_address: usize) Self {
+    const dtb_size = totalSize(@ptrFromInt(dtb_address)) catch 0;
     const dtb_slice = @as([*]const u8, @ptrFromInt(dtb_address))[0..dtb_size];
-
-    dtb_root = dtb.parse(allocator, dtb_slice) catch {
-        @panic("Error occured when parsing dtb files\n");
+    return .{
+        .root = dtb.parse(allocator, dtb_slice) catch {
+            @panic("Error occured when parsing dtb files\n");
+        },
     };
-
-    return dtb_size;
 }
 
-pub fn deinit(allocator: std.mem.Allocator) void {
-    dtb_root.deinit(allocator);
+pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+    self.root.deinit(allocator);
 }
 
-pub fn fdtTraverse(callbackFunc: fn (*dtb.Node) void) void {
-    callbackFunc(dtb_root);
+pub fn fdtTraverse(self: *const Self, callbackFunc: fn (*const Node) void) void {
+    callbackFunc(self.root);
 }

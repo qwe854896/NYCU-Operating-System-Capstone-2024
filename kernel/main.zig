@@ -78,9 +78,10 @@ export fn main(dtb_address: usize) void {
     var fba = std.heap.FixedBufferAllocator.init(buffer);
     const startup_allocator = fba.allocator();
 
-    const dtb_size = dtb.init(startup_allocator, dtb_address);
-    dtb.fdtTraverse(initrd.initRamfsCallback);
-    dtb.deinit(startup_allocator);
+    const dtb_size = dtb.totalSize(@ptrFromInt(dtb_address)) catch 0;
+    var dtb_root = dtb.init(startup_allocator, dtb_address);
+    dtb_root.fdtTraverse(initrd.initRamfsCallback);
+    dtb_root.deinit(startup_allocator);
 
     const initrd_start_ptr = initrd.getInitrdStartPtr();
     const initrd_end_ptr = initrd.getInitrdEndPtr();
