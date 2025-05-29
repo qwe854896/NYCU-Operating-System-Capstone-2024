@@ -63,10 +63,10 @@
             packages = with pkgs; [
               just
               qemu
-              python312
-              python312Packages.pyserial
+              python313
+              python313Packages.pyserial
               pwndbg.packages.${system}.default
-              zig-overlay.packages.${system}.master
+              zig-overlay.packages.${system}."0.14.1"
               nixvimExtended.config.build.package
               minicom
             ];
