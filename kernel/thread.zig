@@ -118,7 +118,7 @@ pub fn end() noreturn {
 }
 
 pub fn fork(parent_trap_frame: *TrapFrame) void {
-    const self: *volatile ThreadContext = threadFromCurrent();
+    const self: *ThreadContext = threadFromCurrent();
 
     pid_count += 1;
 
@@ -157,7 +157,7 @@ pub fn fork(parent_trap_frame: *TrapFrame) void {
     context.invalidateCache();
     context.switchTo(context.getCurrent(), context.getCurrent());
 
-    const new_self: *volatile ThreadContext = threadFromCurrent();
+    const new_self: *ThreadContext = threadFromCurrent();
     if (@intFromPtr(self) == @intFromPtr(new_self)) {
         t.cpu_context = self.cpu_context;
         t.cpu_context.fp = @intFromPtr(t.kernel_stack.ptr) + (self.cpu_context.fp - @intFromPtr(self.kernel_stack.ptr));
