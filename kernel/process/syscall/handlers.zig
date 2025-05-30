@@ -256,7 +256,7 @@ pub fn sysChdir(trap_frame: *TrapFrame) void {
     const self: *ThreadContext = thread.threadFromCurrent();
     const path: [:0]const u8 = std.mem.span(@as([*:0]const u8, @ptrFromInt(trap_frame.x0)));
 
-    self.cwd = getSingletonAllocator().dupe(u8, path) catch {
+    self.cwd = self.allocator.dupe(u8, path) catch {
         trap_frame.x0 = @bitCast(@as(i64, -1));
         return;
     };
