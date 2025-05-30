@@ -1,6 +1,6 @@
 const std = @import("std");
 const vfs = @import("vfs.zig");
-const initrd = @import("initrd.zig");
+const main = @import("../main.zig");
 
 const VNodeHashMap = std.StringHashMap(*VNode);
 const Allocator = std.mem.Allocator;
@@ -12,6 +12,8 @@ const File = vfs.File;
 const VNodeOperations = vfs.VNodeOperations;
 const FileOperations = vfs.FileOperations;
 const Whence = vfs.FileOperations.Whence;
+
+const getSingletonInitrd = main.getSingletonInitrd;
 
 pub fn fileSystem() FileSystem {
     return .{
@@ -34,7 +36,7 @@ fn initRootVnode(allocator: Allocator) ?*VNode {
 
     root_dir.* = InitramDir.init(allocator);
 
-    const entries = initrd.listFiles();
+    const entries = getSingletonInitrd().listFiles();
     for (entries) |entry| {
         const file = root_dir.initFileVnode(entry.name) orelse return null;
         const copy_name = root_dir.allocator.dupe(u8, entry.name) catch return null;
@@ -148,7 +150,7 @@ const InitramFileNode = struct {
     allocator: Allocator,
 
     pub fn init(allocator: Allocator, filename: []const u8) !InitramFileNode {
-        const content = initrd.getFileContent(filename).?;
+        const content = getSingletonInitrd().getFileContent(filename).?;
         return .{
             .data = try allocator.dupe(u8, content),
             .size = content.len,

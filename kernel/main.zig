@@ -2,21 +2,21 @@ const std = @import("std");
 const drivers = @import("drivers");
 const exception = @import("exception.zig");
 const sched = @import("sched.zig");
-const initrd = @import("fs/initrd.zig");
+const fs = @import("fs.zig");
 const heap = @import("lib/heap.zig");
 const dtb = @import("lib/dtb.zig");
 const thread = @import("thread.zig");
 const mm = @import("mm.zig");
-const Vfs = @import("fs/Vfs.zig");
-const TmpFs = @import("fs/TmpFs.zig");
-const InitramFs = @import("fs/InitramFs.zig");
-const UartVNode = @import("fs/UartVNode.zig");
-const FramebufferVNode = @import("fs/FramebufferVNode.zig");
 const uart = drivers.uart;
 const mailbox = drivers.mailbox;
 
 const PageAllocator = heap.PageAllocator(.{ .verbose_log = false });
 const DynamicAllocator = heap.DynamicAllocator(.{ .verbose_log = false });
+const Vfs = fs.Vfs;
+const TmpFs = fs.TmpFs;
+const InitramFs = fs.InitramFs;
+const UartVNode = fs.UartVNode;
+const FramebufferVNode = fs.FramebufferVNode;
 
 pub const std_options: std.Options = .{
     .log_level = .info,
@@ -57,6 +57,11 @@ pub fn getSingletonVfs() *Vfs {
     return &vfs;
 }
 
+var initrd: fs.initrd.Initrd = undefined;
+pub fn getSingletonInitrd() *fs.initrd.Initrd {
+    return &initrd;
+}
+
 // Main function for the kernel
 export fn main(dtb_address: usize) void {
     drivers.init();
@@ -80,11 +85,11 @@ export fn main(dtb_address: usize) void {
 
     const dtb_size = dtb.totalSize(@ptrFromInt(dtb_address)) catch 0;
     var dtb_root = dtb.init(startup_allocator, dtb_address);
-    dtb_root.fdtTraverse(initrd.initRamfsCallback);
+    dtb_root.fdtTraverse(fs.initrd.initRamfsCallback);
     dtb_root.deinit(startup_allocator);
 
-    const initrd_start_ptr = initrd.getInitrdStartPtr();
-    const initrd_end_ptr = initrd.getInitrdEndPtr();
+    const initrd_start_ptr = fs.initrd.getInitrdStartPtr();
+    const initrd_end_ptr = fs.initrd.getInitrdEndPtr();
 
     std.log.info("Board revision: 0x{X}", .{board_revision});
     std.log.info("ARM Memory Base: 0x{X}", .{arm_memory.@"0"});
@@ -124,7 +129,7 @@ export fn main(dtb_address: usize) void {
         : [arg0] "r" (@intFromPtr(invalid_pgd)),
     );
 
-    initrd.init(allocator);
+    initrd = fs.initrd.Initrd.init(allocator);
     defer initrd.deinit();
 
     vfs = Vfs.init(allocator);
